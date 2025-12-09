@@ -1,0 +1,91 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Membership: projectMembers/{uid}/projects/{projectId} with field `roleCode`
+    function memberDoc(projectId) {
+      return get(/databases/$(database)/documents/projectMembers/$(request.auth.uid)/projects/$(projectId));
+    }
+
+    function isMember(projectId) {
+      return isSignedIn() && exists(/databases/$(database)/documents/projectMembers/$(request.auth.uid)/projects/$(projectId));
+    }
+
+    function hasAnyRole(projectId, roles) {
+      return isSignedIn()
+        && isMember(projectId)
+        && memberDoc(projectId).data.roleCode in roles;
+    }
+
+    // Role sets
+    function isExecutiveOrManager(projectId) {
+      return hasAnyRole(projectId, ['executive', 'manager', 'sysadmin']);
+    }
+
+    function isSysAdmin(projectId) {
+      return hasAnyRole(projectId, ['sysadmin']);
+    }
+
+    function isFieldWorker(projectId) {
+      return hasAnyRole(projectId, ['field', 'sysadmin']);
+    }
+
+    // Projects collection
+    match /projects/{projectId} {
+      allow read: if isMember(projectId) || isSysAdmin(projectId);
+      allow create: if isExecutiveOrManager(projectId) || isSysAdmin(projectId);
+      allow update, delete: if isExecutiveOrManager(projectId) || isSysAdmin(projectId);
+    }
+
+    // Project members subcollection (membership management)
+    match /projectMembers/{userId}/projects/{projectId} {
+      allow read: if request.auth.uid == userId && (isMember(projectId) || isSysAdmin(projectId));
+      // Only executive/manager of the project can modify memberships
+      allow create, update, delete: if isExecutiveOrManager(projectId) || isSysAdmin(projectId);
+    }
+
+    // Schedules (tasks)
+    match /schedules/{taskId} {
+      allow read: if isSignedIn() && (isMember(resource.data.projectId) || isSysAdmin(resource.data.projectId));
+      allow create: if isSignedIn() && (isExecutiveOrManager(request.resource.data.projectId) || isSysAdmin(request.resource.data.projectId));
+      allow update, delete: if isSignedIn() && (isExecutiveOrManager(resource.data.projectId) || isSysAdmin(resource.data.projectId));
+    }
+
+    // Resources
+    match /resources/{resourceId} {
+      allow read: if isSignedIn() && (isMember(resource.data.projectId) || isSysAdmin(resource.data.projectId));
+      allow create: if isSignedIn() && (isExecutiveOrManager(request.resource.data.projectId) || isSysAdmin(request.resource.data.projectId));
+      allow update, delete: if isSignedIn() && (isExecutiveOrManager(resource.data.projectId) || isSysAdmin(resource.data.projectId));
+    }
+
+    // Contracts
+    match /contracts/{contractId} {
+      // 현장근무는 계약/견적 접근 불가
+      allow read: if isSignedIn() && (isExecutiveOrManager(resource.data.projectId) || isSysAdmin(resource.data.projectId));
+      allow create, update, delete: if isSignedIn() && (isExecutiveOrManager(request.resource.data.projectId) || isSysAdmin(request.resource.data.projectId));
+    }
+
+    // Documents metadata
+    match /documents/{documentId} {
+      allow read: if isSignedIn() && (isMember(resource.data.projectId) || isSysAdmin(resource.data.projectId));
+      allow create: if isSignedIn() && (isExecutiveOrManager(request.resource.data.projectId) || isSysAdmin(request.resource.data.projectId));
+      allow update, delete: if isSignedIn() && (isExecutiveOrManager(resource.data.projectId) || isSysAdmin(resource.data.projectId));
+    }
+
+    // Reports metadata
+    match /reports/{reportId} {
+      // 현장근무: 작성만, 읽기는 경영자/관리자만 허용
+      allow read: if isSignedIn() && (isExecutiveOrManager(resource.data.projectId) || isSysAdmin(resource.data.projectId));
+      allow create: if isSignedIn() && (isExecutiveOrManager(request.resource.data.projectId) || isFieldWorker(request.resource.data.projectId));
+      allow update, delete: if isSignedIn() && (isExecutiveOrManager(resource.data.projectId) || isSysAdmin(resource.data.projectId));
+    }
+
+    // Deny everything else
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

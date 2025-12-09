@@ -1,0 +1,38 @@
+{
+    "functions": {
+        "source": "functions"
+    },
+    "firestore": {
+        "rules": "firestore.rules"
+    },
+    "hosting": {
+        "site": "crossmanager",
+        "public": "dist_all",
+        "rewrites": [
+            {
+                "source": "/api/**",
+                "function": "api"
+            },
+            {
+                "source": "/pms/**",
+                "destination": "/pms/index.html"
+            },
+            {
+                "source": "/ems/**",
+                "destination": "/ems/index.html"
+            },
+            {
+                "source": "/swms/**",
+                "destination": "/swms/index.html"
+            },
+            {
+                "source": "/sms/**",
+                "destination": "/sms/index.html"
+            },
+            {
+                "source": "**",
+                "destination": "/index.html"
+            }
+        ]
+    }
+}

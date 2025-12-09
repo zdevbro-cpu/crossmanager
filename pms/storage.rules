@@ -1,0 +1,37 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // path format: projects/{projectId}/**
+    function projectIdFromPath() {
+      return request.resource != null && request.resource.name.split('/')[2] == 'projects'
+        ? request.resource.name.split('/')[3]
+        : null;
+    }
+
+    function isMember(projectId) {
+      return isSignedIn()
+        && exists(/databases/(default)/documents/projectMembers/$(request.auth.uid)/projects/$(projectId));
+    }
+
+    function isSysAdmin(projectId) {
+      return isSignedIn()
+        && isMember(projectId)
+        && get(/databases/(default)/documents/projectMembers/$(request.auth.uid)/projects/$(projectId)).data.roleCode == 'sysadmin';
+    }
+
+    match /projects/{projectId}/{allPaths=**} {
+      allow read: if isMember(projectId) || isSysAdmin(projectId);
+      // uploads allowed for all project members (보고 사진/문서 업로드 포함) + sysadmin
+      allow write: if isMember(projectId) || isSysAdmin(projectId);
+    }
+
+    // deny others
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

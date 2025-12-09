@@ -1,0 +1,62 @@
+:root {
+  font-family: 'Segoe UI', 'Noto Sans KR', system-ui, -apple-system, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  /* Design Tokens matching PMS/EMS aesthetics */
+  --primary: #3b82f6;
+  --primary-dark: #2563eb;
+  --primary-light: #60a5fa;
+  --primary-light-bg: rgba(59, 130, 246, 0.1);
+
+  --bg-root: #0b1324;
+  --bg-surface: rgba(255, 255, 255, 0.03);
+  --bg-surface-hover: rgba(255, 255, 255, 0.06);
+
+  --text-primary: #e8ecf7;
+  --text-secondary: #9fb2cc;
+  --text-tertiary: #64748b;
+
+  --border: rgba(255, 255, 255, 0.08);
+  --border-light: rgba(255, 255, 255, 0.12);
+
+  color: var(--text-primary);
+  background-color: var(--bg-root);
+
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 18% 18%, rgba(59, 93, 255, 0.08), transparent 30%),
+    radial-gradient(circle at 82% 4%, rgba(0, 255, 209, 0.08), transparent 28%),
+    var(--bg-root);
+  color: var(--text-primary);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+img {
+  display: block;
+}
+
+button {
+  font: inherit;
+}
+
+p {
+  margin: 0;
+}

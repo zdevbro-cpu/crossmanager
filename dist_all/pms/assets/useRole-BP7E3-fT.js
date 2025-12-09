@@ -1,0 +1,1 @@
+import{d as u,a as n,r as a}from"./index-Bk_PkX1w.js";import{u as c}from"./useProjectMembers-C27NAglr.js";function l(){const{user:t}=u(),{selectedId:e}=n(),{data:o}=c(t?.uid??"");return{role:a.useMemo(()=>{const r=o?.find(s=>s.id===e)?.roleCode;return r||"manager"},[o,e])}}export{l as u};
