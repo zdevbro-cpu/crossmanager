@@ -85,14 +85,23 @@ async function applyInventoryDelta(client, projectId, warehouseId, lines, multip
     }
 }
 
-const pool = new Pool({
+const dbConfig = {
     user: process.env.DB_USER,
-    host: process.env.DB_HOST,
     database: process.env.DB_NAME,
     password: process.env.DB_PASSWORD,
-    port: process.env.DB_PORT || 5432,
-    ssl: { rejectUnauthorized: false }
-})
+}
+
+if (process.env.INSTANCE_CONNECTION_NAME) {
+    // Production: Use Cloud SQL Socket
+    dbConfig.host = `/cloudsql/${process.env.INSTANCE_CONNECTION_NAME}`
+} else {
+    // Local: Use TCP
+    dbConfig.host = process.env.DB_HOST
+    dbConfig.port = process.env.DB_PORT || 5432
+    dbConfig.ssl = { rejectUnauthorized: false }
+}
+
+const pool = new Pool(dbConfig)
 
 pool.connect((err) => {
     if (err) {

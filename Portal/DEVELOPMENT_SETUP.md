@@ -87,7 +87,7 @@ Portal/
 
 ### 환경 변수 (.env)
 ```env
-VITE_FIREBASE_API_KEY=AIzaSyCz6gX_tWuIQDoLWaw3axANZ8o73rdbDCI
+VITE_FIREBASE_API_KEY=YOUR_API_KEY_HERE
 VITE_FIREBASE_AUTH_DOMAIN=crossmanager-1e21c.firebaseapp.com
 VITE_FIREBASE_PROJECT_ID=crossmanager-1e21c
 VITE_FIREBASE_STORAGE_BUCKET=crossmanager-1e21c.firebasestorage.app
