@@ -35,14 +35,53 @@ CREATE TABLE projects (
 );
 
 -- 계약 관리 (견적, 변경계약 포함)
+-- 계약 관리 (견적, 변경계약 포함) - 확장됨
 CREATE TABLE contracts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
-    type VARCHAR(20), -- EST(견적), CONTRACT(계약), CHANGE(변경)
-    name VARCHAR(255),
-    amount DECIMAL(15, 2), -- 금액
+    code VARCHAR(50) UNIQUE, -- 자동 채번
+    type VARCHAR(20), -- 'EST'(견적), 'CONTRACT'(계약), 'CHANGE'(변경)
+    category VARCHAR(20), -- 'NEW', 'ADD', 'CHANGE', 'REDUCE'
+    name VARCHAR(255), -- 계약명
+    
+    total_amount DECIMAL(15, 2) DEFAULT 0, -- 총액 (공급가+부가세)
+    cost_direct DECIMAL(15, 2) DEFAULT 0, -- 직접비
+    cost_indirect DECIMAL(15, 2) DEFAULT 0, -- 간접비
+    risk_fee DECIMAL(15, 2) DEFAULT 0, -- 리스크 비용
+    margin DECIMAL(15, 2) DEFAULT 0, -- 이익금
+    
+    regulation VARCHAR(100), -- 규정 (유연한 입력)
+    
     contract_date DATE,
-    status VARCHAR(20), -- DRAFT, REVIEW, SIGNED
+    start_date DATE,
+    end_date DATE,
+    
+    client_manager VARCHAR(100),
+    our_manager VARCHAR(100),
+    
+    terms_payment TEXT,
+    terms_penalty TEXT,
+    
+    status VARCHAR(20) DEFAULT 'DRAFT', -- DRAFT, REVIEW, SUBMITTED, SIGNED, REJECTED
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 계약 세부 내역 (Scope of Work)
+CREATE TABLE contract_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    contract_id UUID REFERENCES contracts(id) ON DELETE CASCADE,
+    
+    group_name VARCHAR(50), -- 공종 (설비해체, 배관, 전기 등)
+    name VARCHAR(100), -- 품명
+    spec VARCHAR(100), -- 규격
+    
+    quantity DECIMAL(12, 2) DEFAULT 0,
+    unit VARCHAR(20), -- 식, m, ton...
+    unit_price DECIMAL(15, 2) DEFAULT 0,
+    amount DECIMAL(15, 2) DEFAULT 0, -- quantity * unit_price
+    
+    note TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -130,6 +169,57 @@ CREATE TABLE safety_educations (
     education_date DATE,
     valid_until DATE, -- 유효기간
     completion_status BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 계약 관리 (견적, 변경계약 포함) - 상세 확장
+CREATE TABLE contracts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
+    code VARCHAR(50) UNIQUE, -- 자동 채번 (예: EST-241210-001)
+    type VARCHAR(20), -- 'EST'(견적), 'CONTRACT'(계약), 'CHANGE'(변경)
+    category VARCHAR(20), -- 'NEW', 'ADD', 'CHANGE', 'REDUCE'
+    name VARCHAR(255), -- 계약명 (프로젝트명과 유사할 수 있음)
+    
+    -- 금액 상세
+    total_amount DECIMAL(15, 2) DEFAULT 0, -- 총액 (공급가+부가세)
+    cost_direct DECIMAL(15, 2) DEFAULT 0, -- 직접비
+    cost_indirect DECIMAL(15, 2) DEFAULT 0, -- 간접비
+    risk_fee DECIMAL(15, 2) DEFAULT 0, -- 리스크 비용
+    margin DECIMAL(15, 2) DEFAULT 0, -- 이익금
+    
+    -- 규정 및 담당자
+    regulation_config JSONB, -- 고객사 규정 상세 (JSON)
+    client_manager VARCHAR(100),
+    our_manager VARCHAR(100),
+    
+    -- 일정 및 조건
+    contract_date DATE,
+    start_date DATE,
+    end_date DATE,
+    terms_payment TEXT,
+    terms_penalty TEXT,
+    
+    status VARCHAR(20) DEFAULT 'DRAFT', -- DRAFT, REVIEW, SUBMITTED, SIGNED, REJECTED
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 계약 세부 내역 (Scope of Work / BOQ)
+CREATE TABLE contract_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    contract_id UUID REFERENCES contracts(id) ON DELETE CASCADE,
+    
+    group_name VARCHAR(50), -- 공종 (설비해체, 배관, 전기, 반출, 폐기물)
+    name VARCHAR(100), -- 품명/작업명
+    spec VARCHAR(100), -- 규격 (중량, 난이도 등)
+    
+    quantity DECIMAL(12, 2) DEFAULT 0,
+    unit VARCHAR(20), -- 식, m, ton...
+    unit_price DECIMAL(15, 2) DEFAULT 0,
+    amount DECIMAL(15, 2) DEFAULT 0, -- 자동계산 대상
+    
+    note TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

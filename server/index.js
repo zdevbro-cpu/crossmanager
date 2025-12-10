@@ -35,9 +35,14 @@ const upload = multer({
 })
 
 app.use(cors())
-app.use(express.json())
+app.use(express.json({ limit: '50mb' }))
+app.use(express.urlencoded({ limit: '50mb', extended: true }))
 // Serve uploaded files statically
 app.use('/uploads', express.static(uploadsDir))
+
+// Routes
+const contractsRouter = require('./routes/contracts')
+app.use('/api/contracts', contractsRouter)
 
 // Utility helpers
 const todayStr = () => new Date().toISOString().split('T')[0]
@@ -145,7 +150,7 @@ pool.connect((err) => {
                 specifications VARCHAR(255),
                 serial_number VARCHAR(255),
                 acquisition_date DATE,
-                equipment_status VARCHAR(50) DEFAULT '?�품',
+                equipment_status VARCHAR(50) DEFAULT '가품',
                 purchase_type VARCHAR(50),
                 purchase_amount DECIMAL(15,2),
                 residual_value DECIMAL(15,2),
@@ -186,6 +191,50 @@ pool.connect((err) => {
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         `).catch(err => console.error('Error creating equipment table:', err))
+
+        // Init Contracts Tables (PMS)
+        pool.query(`
+            CREATE TABLE IF NOT EXISTS contracts (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                project_id UUID, -- REFERENCES projects(id) ON DELETE CASCADE,
+                code VARCHAR(50) UNIQUE,
+                type VARCHAR(20),
+                category VARCHAR(20),
+                name VARCHAR(255),
+                total_amount DECIMAL(15, 2) DEFAULT 0,
+                cost_direct DECIMAL(15, 2) DEFAULT 0,
+                cost_indirect DECIMAL(15, 2) DEFAULT 0,
+                risk_fee DECIMAL(15, 2) DEFAULT 0,
+                margin DECIMAL(15, 2) DEFAULT 0,
+                regulation_config JSONB,
+                client_manager VARCHAR(100),
+                our_manager VARCHAR(100),
+                contract_date DATE,
+                start_date DATE,
+                end_date DATE,
+                terms_payment TEXT,
+                terms_penalty TEXT,
+                status VARCHAR(20) DEFAULT 'DRAFT',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `).then(() => {
+            pool.query(`
+                CREATE TABLE IF NOT EXISTS contract_items (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    contract_id UUID REFERENCES contracts(id) ON DELETE CASCADE,
+                    group_name VARCHAR(50),
+                    name VARCHAR(100),
+                    spec VARCHAR(100),
+                    quantity DECIMAL(12, 2) DEFAULT 0,
+                    unit VARCHAR(20),
+                    unit_price DECIMAL(15, 2) DEFAULT 0,
+                    amount DECIMAL(15, 2) DEFAULT 0,
+                    note TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+             `)
+        }).catch(err => console.error('Error creating contracts tables:', err))
 
         // --- SMS Tables Init ---
         const initSmsTables = async () => {
