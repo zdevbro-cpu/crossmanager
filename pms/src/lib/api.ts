@@ -2,7 +2,7 @@
 import axios from 'axios'
 
 // API 서버 기본 URL (환경 변수 또는 기본값)
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api'
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3005/api'
 
 // Axios 인스턴스 생성
 export const apiClient = axios.create({

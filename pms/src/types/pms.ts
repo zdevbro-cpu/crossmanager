@@ -114,16 +114,24 @@ export interface Contract {
   updatedAt?: string
 }
 
-export interface DocumentMeta {
+export interface PmsDocument {
   id: string
   projectId: string
-  kind: "도면" | "계약서" | "허가서" | "기타"
-  type?: "도면" | "계약서" | "허가서" | "기타" // 호환용
+  category: string
+  type: string
   name: string
-  version: string
-  tags: string[]
-  url?: string
+  status: "DRAFT" | "PENDING" | "APPROVED" | "REJECTED"
+  currentVersion: string
+  createdBy?: string
+  createdAt?: string
+
+  // From Join
+  filePath?: string
+  fileSize?: number
 }
+
+// Alias for compatibility if needed, or replace usages
+export type DocumentMeta = PmsDocument
 
 export interface ReportMeta {
   id: string

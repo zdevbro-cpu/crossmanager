@@ -268,6 +268,61 @@ CREATE TABLE scraps (
 );
 
 -- ==========================================
+-- 5. Document Management (문서 관리)
+-- ==========================================
+
+-- 문서 마스터
+CREATE TABLE documents (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
+    category VARCHAR(50), -- CONTRACT, PROCESS, SAFETY, QUALITY, EVIDENCE, SCRAP, PHOTO
+    type VARCHAR(100), -- 견적서, RA, 작업허가서 등
+    name VARCHAR(255) NOT NULL,
+    status VARCHAR(20) DEFAULT 'DRAFT', -- DRAFT, PENDING, APPROVED, REJECTED
+    current_version VARCHAR(20) DEFAULT 'v1',
+    security_level VARCHAR(20) DEFAULT 'NORMAL',
+    metadata JSONB, -- 태그, 공정ID 등
+    review_status VARCHAR(20),
+    created_by UUID, -- 추후 Users 연동
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 문서 버전 이력
+CREATE TABLE document_versions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    document_id UUID REFERENCES documents(id) ON DELETE CASCADE,
+    version VARCHAR(20) NOT NULL,
+    file_path TEXT NOT NULL,
+    file_size BIGINT,
+    file_hash VARCHAR(255),
+    change_log TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 승인 워크플로우
+CREATE TABLE document_approvals (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    version_id UUID REFERENCES document_versions(id) ON DELETE CASCADE,
+    approver_id UUID,
+    step_order INT DEFAULT 1,
+    status VARCHAR(20) DEFAULT 'WAITING', -- WAITING, APPROVED, REJECTED
+    comment TEXT,
+    signature_url TEXT,
+    action_at TIMESTAMP
+);
+
+-- 외부 공유
+CREATE TABLE document_shares (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    document_id UUID REFERENCES documents(id) ON DELETE CASCADE,
+    token VARCHAR(255) UNIQUE NOT NULL,
+    expires_at TIMESTAMP,
+    access_count INT DEFAULT 0,
+    created_by UUID
+);
+
+-- ==========================================
 -- 샘플 데이터 입력
 -- ==========================================
 
