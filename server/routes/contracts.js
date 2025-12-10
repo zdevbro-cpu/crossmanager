@@ -50,6 +50,13 @@ router.get('/', async (req, res) => {
         query += ' ORDER BY created_at DESC'
 
         const { rows } = await pool.query(query, params)
+
+        // Fetch items for each contract
+        for (const contract of rows) {
+            const itemsRes = await pool.query('SELECT * FROM contract_items WHERE contract_id = $1 ORDER BY created_at ASC', [contract.id])
+            contract.items = itemsRes.rows
+        }
+
         res.json(rows)
     } catch (err) {
         console.error(err)

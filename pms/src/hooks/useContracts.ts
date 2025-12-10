@@ -44,6 +44,8 @@ const mapContractFromDB = (data: any): Contract => ({
   termsPayment: data.terms_payment,
   termsPenalty: data.terms_penalty,
 
+  attachment: data.attachment, // Add attachment mapping
+
   status: data.status,
   items: data.items ? data.items.map(mapItemFromDB) : [],
 

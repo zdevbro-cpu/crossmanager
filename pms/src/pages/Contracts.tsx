@@ -504,7 +504,7 @@ function ContractsPage() {
           <button className="pill pill-outline" onClick={handleReset}>새 계약 작성</button>
         </div>
         {isLoading && <p className="muted p-4">로딩 중...</p>}
-        <div className="table contracts-table" style={{ maxHeight: '400px', overflowY: 'auto', display: 'block' }}>
+        <div className="table contracts-table contracts-list-scroll" style={{ maxHeight: '400px', overflowY: 'auto', display: 'block' }}>
           <div className="table-row table-header" style={{ position: 'sticky', top: 0, zIndex: 1, backgroundColor: '#25262b' }}>
             <span>프로젝트</span>
             <span>구분</span>
@@ -527,7 +527,14 @@ function ContractsPage() {
                 <span>{c.totalAmount.toLocaleString()} 원</span>
                 <span className={`badge ${c.status === 'SIGNED' ? 'badge-live' : ''}`}>{c.status}</span>
                 <span className="row-actions">
-                  <button onClick={(e) => { e.stopPropagation(); handlePrint(c); }} className="icon-button" title="출력/보기"><Printer size={16} /></button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handlePrint(c); }}
+                    className="icon-button"
+                    title={c.attachment || (c.type === 'EST' && c.items && c.items.length > 0) ? "출력/보기 (인쇄 가능)" : "출력/보기"}
+                    style={c.attachment || (c.type === 'EST' && c.items && c.items.length > 0) ? { color: '#3ae4a4' } : {}}
+                  >
+                    <Printer size={16} />
+                  </button>
                   <button onClick={(e) => { e.stopPropagation(); handleEdit(c); }} className="icon-button"><Pencil size={16} /></button>
                   <button onClick={(e) => { e.stopPropagation(); handleDelete(c.id); }} className="icon-button"><Trash2 size={16} /></button>
                 </span>

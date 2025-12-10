@@ -134,3 +134,11 @@ dist/
 dist-ssr/
 dist_all/
 firebase-debug.log
+
+!functions/.env
+
+!PMS/.env
+
+!PMS/.env.production
+
+!PMS/src/pages/Projects.tsx

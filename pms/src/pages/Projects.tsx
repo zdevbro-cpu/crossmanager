@@ -140,25 +140,21 @@ function ProjectsPage() {
     }
 
     try {
-      const response = await fetch('http://localhost:3000/api/projects', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          code: generatedCode,
-          name: form.name,
-          client: form.client || '미정',
-          address: form.address || '-',
-          start_date: form.startDate || null,
-          end_date: form.endDate || null,
-          security_level: form.securityLevel,
-          pm_name: form.pm || '-',
-          regulation_type: form.regulation,
-          status: form.status,
-        }),
+      const response = await apiClient.post('/projects', {
+        code: generatedCode,
+        name: form.name,
+        client: form.client || '미정',
+        address: form.address || '-',
+        start_date: form.startDate || null,
+        end_date: form.endDate || null,
+        security_level: form.securityLevel,
+        pm_name: form.pm || '-',
+        regulation_type: form.regulation,
+        status: form.status,
       })
 
-      if (!response.ok) throw new Error('Failed to create project')
-      const createdProject = await response.json()
+      // if (!response.ok) throw new Error('Failed to create project') // Axios throws on non-2xx
+      const createdProject = response.data
 
       // Convert DB format to frontend format
       const newProject: Project = {
@@ -205,25 +201,21 @@ function ProjectsPage() {
     }
 
     try {
-      const response = await fetch(`http://localhost:3000/api/projects/${selectedId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          code: form.code,
-          name: form.name,
-          client: form.client || '미정',
-          address: form.address || '-',
-          start_date: form.startDate || null,
-          end_date: form.endDate || null,
-          security_level: form.securityLevel,
-          pm_name: form.pm || '-',
-          regulation_type: form.regulation,
-          status: form.status,
-        }),
+      const response = await apiClient.put(`/projects/${selectedId}`, {
+        code: form.code,
+        name: form.name,
+        client: form.client || '미정',
+        address: form.address || '-',
+        start_date: form.startDate || null,
+        end_date: form.endDate || null,
+        security_level: form.securityLevel,
+        pm_name: form.pm || '-',
+        regulation_type: form.regulation,
+        status: form.status,
       })
 
-      if (!response.ok) throw new Error('Failed to update project')
-      const updatedProject = await response.json()
+      // if (!response.ok) throw new Error('Failed to update project')
+      const updatedProject = response.data
 
       // Convert DB format to frontend format
       const updated: Project = {
