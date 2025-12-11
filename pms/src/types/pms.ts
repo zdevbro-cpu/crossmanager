@@ -120,6 +120,7 @@ export interface PmsDocument {
   category: string
   type: string
   name: string
+  kind?: string
   status: "DRAFT" | "PENDING" | "APPROVED" | "REJECTED"
   currentVersion: string
   createdBy?: string

@@ -1,32 +1,12 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { X, FileText, Upload, ExternalLink, RefreshCw, Plus, Trash2 } from 'lucide-react'
-import { apiClient } from '../lib/api'
+import { apiClient, buildFileUrl } from '../lib/api'
 import { useToast } from './ToastProvider'
 
 interface DocumentDetailModalProps {
     documentId: string
     onClose: () => void
     onUpdate: () => void
-}
-
-const getDownloadUrl = (path?: string) => {
-    if (!path) return '#'
-    return `http://localhost:3005/${path}`
-}
-
-const formatDate = (dateInput: any) => {
-    if (!dateInput) return '-'
-    let dateStr = dateInput
-    if (typeof dateStr === 'string' && !dateStr.includes('Z') && !dateStr.includes('+')) {
-        dateStr += 'Z'
-    }
-    const date = new Date(dateStr)
-    return new Intl.DateTimeFormat('ko-KR', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        timeZone: 'Asia/Seoul'
-    }).format(date)
 }
 
 const formatDateTime = (dateInput: any) => {
@@ -47,6 +27,21 @@ const formatDateTime = (dateInput: any) => {
     }).format(date)
 }
 
+const formatDate = (dateInput: any) => {
+    if (!dateInput) return '-'
+    let dateStr = dateInput
+    if (typeof dateStr === 'string' && !dateStr.includes('Z') && !dateStr.includes('+')) {
+        dateStr += 'Z'
+    }
+    const date = new Date(dateStr)
+    return new Intl.DateTimeFormat('ko-KR', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        timeZone: 'Asia/Seoul'
+    }).format(date)
+}
+
 export default function DocumentDetailModal({ documentId, onClose, onUpdate }: DocumentDetailModalProps) {
     const { show } = useToast()
     const [activeTab, setActiveTab] = useState<'info' | 'history'>('info')
@@ -54,9 +49,11 @@ export default function DocumentDetailModal({ documentId, onClose, onUpdate }: D
     const [loading, setLoading] = useState(true)
     const [updatingStatus, setUpdatingStatus] = useState(false)
     const [isUploadingVersion, setIsUploadingVersion] = useState(false)
+    // Version Upload State
     const [newVersionFile, setNewVersionFile] = useState<File | null>(null)
     const [newVersionDesc, setNewVersionDesc] = useState('')
     const [newVersionString, setNewVersionString] = useState('')
+    const fileInputRef = useRef<HTMLInputElement>(null)
 
     useEffect(() => {
         fetchDetails()
@@ -80,7 +77,7 @@ export default function DocumentDetailModal({ documentId, onClose, onUpdate }: D
         if (!confirm(`상태를 ${newStatus}(으)로 변경하시겠습니까?`)) return
         try {
             setUpdatingStatus(true)
-            await apiClient.patch(`/documents/${documentId}/status`, { status: newStatus })
+            await apiClient.patch(`/documents/${documentId}`, { status: newStatus })
             show('상태가 변경되었습니다.', 'success')
             fetchDetails()
             onUpdate()
@@ -91,14 +88,24 @@ export default function DocumentDetailModal({ documentId, onClose, onUpdate }: D
         }
     }
 
+    const handleSecurityChange = async (newLevel: string) => {
+        if (!confirm(`보안 등급을 ${newLevel}(으)로 변경하시겠습니까?`)) return
+        try {
+            await apiClient.patch(`/documents/${documentId}`, { securityLevel: newLevel })
+            show('보안 등급이 변경되었습니다.', 'success')
+            fetchDetails()
+            onUpdate()
+        } catch (err) {
+            show('보안 등급 변경 실패', 'error')
+        }
+    }
+
     const handleDeleteVersion = async (versionId: string) => {
         if (data.status === 'APPROVED') {
             show('승인된 문서는 버전을 삭제할 수 없습니다.', 'error')
             return
         }
 
-        // Check if it is the latest version
-        // Assuming versions are sorted by created_at DESC (backend does this)
         const latestVersion = data.versions && data.versions[0]
         if (latestVersion && latestVersion.id !== versionId) {
             show('최신 버전만 삭제할 수 있습니다.', 'error')
@@ -117,6 +124,32 @@ export default function DocumentDetailModal({ documentId, onClose, onUpdate }: D
         }
     }
 
+    // Consolidated File Open Handler (Prioritizes Signed URL)
+    const handlePrint = (fileUrl?: string) => {
+        // 1. If we have a signed URL and we are strictly viewing the current file (or no arg passed), use it.
+        // CHECK: If fileUrl is provided (e.g. history item), we only use signed URL if it matches current.
+        if (data.downloadUrl && (!fileUrl || fileUrl === data.file_path)) {
+            window.open(data.downloadUrl, '_blank')
+            return
+        }
+
+        // 2. Fallback for history items or if don't have signed URL
+        let targetUrl = ''
+        if (fileUrl && fileUrl.startsWith('http')) {
+            targetUrl = fileUrl
+        } else if (fileUrl) {
+            // This is likely a relative path (old uploads). 
+            // Warning: For Storage files without signed URL, this will 404.
+            targetUrl = buildFileUrl(fileUrl)
+        }
+
+        if (targetUrl) {
+            window.open(targetUrl, '_blank')
+        } else {
+            show('파일 경로가 올바르지 않습니다. (서명된 URL 만료 또는 파일 없음)', 'error')
+        }
+    }
+
     const handleVersionUpload = async (e: React.FormEvent) => {
         e.preventDefault()
         if (!newVersionFile) {
@@ -125,25 +158,43 @@ export default function DocumentDetailModal({ documentId, onClose, onUpdate }: D
         }
 
         try {
+            setIsUploadingVersion(true)
             const formData = new FormData()
             formData.append('file', newVersionFile)
-            formData.append('change_log', newVersionDesc)
-            formData.append('version', newVersionString) // Send manual version
+            formData.append('changeLog', newVersionDesc)
 
-            await apiClient.post(`/documents/${documentId}/versions`, formData, {
-                headers: { 'Content-Type': 'multipart/form-data' }
+            // Manual Version String (e.g. v1.1)
+            if (newVersionString) {
+                formData.append('version', newVersionString)
+            }
+
+            const baseURL = (apiClient.defaults.baseURL || '/api').replace(/\/$/, '')
+            const response = await fetch(`${baseURL}/documents/${documentId}/versions`, {
+                method: 'POST',
+                body: formData,
             })
 
+            if (!response.ok) {
+                const errData = await response.json().catch(() => ({}))
+                throw new Error(errData.details || errData.error || `Upload failed with status ${response.status}`)
+            }
+
             show('새 버전이 업로드되었습니다.', 'success')
-            setIsUploadingVersion(false)
+
+            // Reset Form
             setNewVersionFile(null)
             setNewVersionDesc('')
-            setNewVersionString('') // Reset version string
+            setNewVersionString('')
+            if (fileInputRef.current) fileInputRef.current.value = ''
+            setIsUploadingVersion(false)
+
             fetchDetails()
             onUpdate()
-        } catch (err) {
+        } catch (err: any) {
             console.error(err)
-            show('버전 업로드 실패', 'error')
+            show('업로드 실패: ' + (err.message || 'Unknown error'), 'error')
+        } finally {
+            setIsUploadingVersion(false)
         }
     }
 
@@ -159,9 +210,9 @@ export default function DocumentDetailModal({ documentId, onClose, onUpdate }: D
     if (!data) return null
 
     const currentVersionObj = data.versions?.find((v: any) => v.version === data.current_version)
-    // Use current version's file info if available, otherwise document's base info
     const displayFilePath = currentVersionObj ? currentVersionObj.file_path : data.file_path
-    const fileName = displayFilePath ? displayFilePath.split('/').pop()?.replace(/^\d+-\d+-/, '') : '파일 없음'
+    // Remove timestamp prefix 12345678-filename.pdf
+    const fileName = displayFilePath ? displayFilePath.split('/').pop()?.replace(/^\d+-/, '') : '파일 없음'
     const fileExt = fileName !== '파일 없음' ? fileName.split('.').pop()?.toUpperCase() : '-'
     const displayFileSize = currentVersionObj ? currentVersionObj.file_size : data.file_size
     const displayDate = currentVersionObj ? currentVersionObj.created_at : data.created_at
@@ -173,7 +224,7 @@ export default function DocumentDetailModal({ documentId, onClose, onUpdate }: D
                     <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                         <div style={{
                             width: '48px', height: '48px',
-                            background: '#0b1324', // Deep Navy from Design System
+                            background: '#0b1324',
                             borderRadius: '8px',
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
                             color: 'white',
@@ -188,13 +239,7 @@ export default function DocumentDetailModal({ documentId, onClose, onUpdate }: D
                             </p>
                         </div>
                     </div>
-                    <button
-                        className="icon-button"
-                        onClick={onClose}
-                        title="닫기"
-                    >
-                        <X size={24} />
-                    </button>
+                    <button className="icon-button" onClick={onClose}><X size={24} /></button>
                 </div>
 
                 <div className="tabs" style={{ padding: '0 1.5rem', borderBottom: '1px solid rgba(255,255,255,0.1)', marginBottom: '1.5rem' }}>
@@ -255,7 +300,27 @@ export default function DocumentDetailModal({ documentId, onClose, onUpdate }: D
                                 </div>
                                 <div className="detail-row" style={{ marginBottom: '0.8rem' }}>
                                     <span className="muted" style={{ width: '100px', display: 'inline-block' }}>보안 등급</span>
-                                    <span>{data.security_level}</span>
+                                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                                        <span className={`badge ${data.security_level === 'SECRET' ? 'badge-danger' : 'badge-neutral'}`}>
+                                            {data.security_level}
+                                        </span>
+                                        <select
+                                            value={data.security_level}
+                                            onChange={(e) => handleSecurityChange(e.target.value)}
+                                            style={{
+                                                padding: '2px 8px', borderRadius: '4px',
+                                                background: '#333',
+                                                color: 'white',
+                                                border: '1px solid #555',
+                                                fontSize: '0.8rem',
+                                                cursor: 'pointer'
+                                            }}
+                                        >
+                                            <option value="NORMAL">NORMAL</option>
+                                            <option value="CONFIDENTIAL">CONFIDENTIAL</option>
+                                            <option value="SECRET">SECRET</option>
+                                        </select>
+                                    </div>
                                 </div>
                                 <div className="detail-row" style={{ marginBottom: '0.8rem' }}>
                                     <span className="muted" style={{ width: '100px', display: 'inline-block' }}>생성일</span>
@@ -272,17 +337,15 @@ export default function DocumentDetailModal({ documentId, onClose, onUpdate }: D
                                     border: '1px dashed rgba(255,255,255,0.1)'
                                 }}>
                                     <FileText size={48} className="muted" style={{ marginBottom: '1rem', opacity: 0.3 }} />
-                                    <a
-                                        href={getDownloadUrl(displayFilePath)}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        title="파일 보기"
-                                        style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}
+
+                                    {/* Use handlePrint for viewing file */}
+                                    <div
+                                        onClick={() => handlePrint()}
+                                        style={{ margin: '0 0 0.5rem 0', fontWeight: 500, cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: '4px', color: '#8bd3ff' }}
                                     >
-                                        <p style={{ margin: '0 0 0.5rem 0', fontWeight: 500, cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: '4px', color: '#8bd3ff' }}>
-                                            {fileName}
-                                        </p>
-                                    </a>
+                                        {fileName}
+                                    </div>
+
                                     <p className="muted" style={{ fontSize: '0.9rem', marginBottom: '0.5rem' }}>
                                         {displayFileSize ? (displayFileSize / 1024 / 1024).toFixed(2) + ' MB' : '0 MB'} • {fileExt}
                                     </p>
@@ -291,17 +354,13 @@ export default function DocumentDetailModal({ documentId, onClose, onUpdate }: D
                                     </p>
 
                                     <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
-                                        {data.file_path && (
-                                            <a
-                                                href={getDownloadUrl(data.file_path)}
-                                                target="_blank"
-                                                rel="noreferrer"
-                                                className="btn btn-primary"
-                                                style={{ textDecoration: 'none', display: 'flex', alignItems: 'center' }}
-                                            >
-                                                <ExternalLink size={16} style={{ marginRight: '6px' }} /> 파일 보기
-                                            </a>
-                                        )}
+                                        <button
+                                            onClick={() => handlePrint()}
+                                            className="btn btn-primary"
+                                            style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', border: 'none', cursor: 'pointer' }}
+                                        >
+                                            <ExternalLink size={16} style={{ marginRight: '6px' }} /> 파일 보기
+                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -315,25 +374,11 @@ export default function DocumentDetailModal({ documentId, onClose, onUpdate }: D
                                 <button
                                     className="icon-button"
                                     onClick={() => {
-                                        if (isUploadingVersion) {
-                                            setNewVersionFile(null);
-                                            setNewVersionDesc('');
-                                            setIsUploadingVersion(false);
-                                        } else {
-                                            setIsUploadingVersion(true);
-                                        }
+                                        setIsUploadingVersion(!isUploadingVersion)
+                                        setNewVersionFile(null)
+                                        setNewVersionDesc('')
                                     }}
                                     title={isUploadingVersion ? "취소" : "새 버전 업로드"}
-                                    style={!isUploadingVersion ? {
-                                        background: '#0b1324',
-                                        border: '1px solid rgba(255,255,255,0.1)',
-                                        borderRadius: '4px',
-                                        width: '32px',
-                                        height: '32px',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center'
-                                    } : {}}
                                 >
                                     {isUploadingVersion ? <X size={20} /> : <Plus size={20} color="white" />}
                                 </button>
@@ -350,18 +395,17 @@ export default function DocumentDetailModal({ documentId, onClose, onUpdate }: D
                                     alignItems: 'center',
                                     gap: '0.5rem'
                                 }}>
-                                    {/* File Select */}
                                     <div style={{ position: 'relative' }}>
                                         <input
-                                            id="version-file-input"
                                             type="file"
+                                            ref={fileInputRef}
                                             onChange={e => setNewVersionFile(e.target.files ? e.target.files[0] : null)}
                                             style={{ display: 'none' }}
                                         />
                                         <button
                                             type="button"
                                             className="icon-button"
-                                            onClick={() => document.getElementById('version-file-input')?.click()}
+                                            onClick={() => fileInputRef.current?.click()}
                                             title="파일 선택"
                                             style={{
                                                 background: newVersionFile ? 'rgba(76, 110, 245, 0.2)' : undefined,
@@ -373,7 +417,6 @@ export default function DocumentDetailModal({ documentId, onClose, onUpdate }: D
                                         </button>
                                     </div>
 
-                                    {/* Content Area */}
                                     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                         {newVersionFile ? (
                                             <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -401,7 +444,7 @@ export default function DocumentDetailModal({ documentId, onClose, onUpdate }: D
                                                         type="text"
                                                         value={newVersionDesc}
                                                         onChange={e => setNewVersionDesc(e.target.value)}
-                                                        placeholder="개정 사유 입력 (선택)"
+                                                        placeholder="개정 사유 (선택)"
                                                         style={{
                                                             flex: 1,
                                                             padding: '0.4rem',
@@ -417,27 +460,24 @@ export default function DocumentDetailModal({ documentId, onClose, onUpdate }: D
                                             </div>
                                         ) : (
                                             <span className="muted" style={{ paddingLeft: '8px', fontSize: '0.9rem' }}>
-                                                왼쪽 버튼을 눌러 파일을 선택하세요 (여러 파일은 .zip 권장)
+                                                파일을 선택해주세요
                                             </span>
                                         )}
                                     </div>
 
-                                    {/* Actions */}
-                                    <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                        <button
-                                            type="submit"
-                                            className="icon-button"
-                                            title="업로드"
-                                            disabled={!newVersionFile}
-                                            style={{
-                                                color: 'white',
-                                                opacity: newVersionFile ? 1 : 0.3,
-                                                cursor: newVersionFile ? 'pointer' : 'not-allowed'
-                                            }}
-                                        >
-                                            <Upload size={18} />
-                                        </button>
-                                    </div>
+                                    <button
+                                        type="submit"
+                                        className="icon-button"
+                                        title="업로드"
+                                        disabled={!newVersionFile}
+                                        style={{
+                                            color: 'white',
+                                            opacity: newVersionFile ? 1 : 0.3,
+                                            cursor: newVersionFile ? 'pointer' : 'not-allowed'
+                                        }}
+                                    >
+                                        <Upload size={18} />
+                                    </button>
                                 </form>
                             )}
 
@@ -466,9 +506,16 @@ export default function DocumentDetailModal({ documentId, onClose, onUpdate }: D
                                             </p>
                                         </div>
                                         <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                            <a href={getDownloadUrl(ver.file_path)} target="_blank" rel="noreferrer" className="icon-button" title="다운로드" style={{ color: '#8bd3ff' }}>
+                                            {/* Open file using handlePrint logic if possible, or direct link */}
+                                            <button
+                                                className="icon-button"
+                                                title="파일 보기"
+                                                onClick={() => handlePrint(ver.file_path)}
+                                                style={{ color: '#8bd3ff' }}
+                                            >
                                                 <ExternalLink size={16} />
-                                            </a>
+                                            </button>
+
                                             {data.status !== 'APPROVED' && data.versions && data.versions[0] && data.versions[0].id === ver.id && (
                                                 <button
                                                     className="icon-button"
