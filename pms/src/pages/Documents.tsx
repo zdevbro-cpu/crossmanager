@@ -2,10 +2,11 @@ import { useState } from 'react'
 import { useDocuments } from '../hooks/useDocuments'
 import { useProjectContext } from '../context/ProjectContext'
 import { useToast } from '../components/ToastProvider'
-import { FileText, Folder, FolderOpen, UploadCloud, CheckCircle, AlertCircle, Clock } from 'lucide-react'
+import { FileText, Folder, FolderOpen, UploadCloud, CheckCircle, AlertCircle, Clock, Lock, Pencil } from 'lucide-react'
 import DocumentUploadModal from '../components/DocumentUploadModal'
 import DocumentDetailModal from '../components/DocumentDetailModal'
 import { apiClient } from '../lib/api'
+import { openPrintWindow } from '../utils/printWindow'
 import type { PmsDocument } from '../types/pms'
 
 interface ContextMenuState {
@@ -17,6 +18,7 @@ interface ContextMenuState {
   name?: string      // File Name
   filePath?: string  // File Path
   version?: string   // Current Version for display
+  securityLevel?: string
 }
 
 interface DocumentTreeProps {
@@ -25,12 +27,13 @@ interface DocumentTreeProps {
   onPrint: (id: string, name: string, path?: string) => void
   onView: (id: string) => void
   onRename: (oldCategory: string) => void
+  onRenameFile: (id: string, currentName: string) => void
   onUploadVersion: (id: string) => void
   onCreateFolder: () => void
   onUploadDocument: (category: string) => void
 }
 
-function DocumentTree({ docs, onDelete, onPrint, onView, onRename, onUploadVersion, onCreateFolder, onUploadDocument }: DocumentTreeProps) {
+function DocumentTree({ docs, onDelete, onPrint, onView, onRename, onRenameFile, onUploadVersion, onCreateFolder, onUploadDocument }: DocumentTreeProps) {
   // Group logic
   const grouped = docs.reduce((acc, doc) => {
     const cat = doc.category || '기타'
@@ -52,6 +55,23 @@ function DocumentTree({ docs, onDelete, onPrint, onView, onRename, onUploadVersi
       type,
       ...data
     })
+  }
+
+
+  /* DEBUG: Check levels */
+  // console.log('Docs Levels:', docs.map(d => ({ name: d.name, level: d.security_level })))
+
+  const renderSecurityIcon = (level?: string) => {
+    const safeLevel = (level || 'NORMAL').toUpperCase()
+
+    if (safeLevel === 'SECRET' || safeLevel === 'TOP_SECRET') {
+      return <span title={`보안등급: ${safeLevel}`}><Lock size={15} style={{ color: '#ff6b6b', marginRight: 8, flexShrink: 0 }} /></span> // Red
+    }
+    if (safeLevel === 'CONFIDENTIAL') {
+      return <span title={`보안등급: ${safeLevel}`}><Lock size={15} style={{ color: '#ff922b', marginRight: 8, flexShrink: 0 }} /></span> // Orange
+    }
+    // NORMAL or others -> Blue
+    return <span title={`보안등급: ${safeLevel}`}><Lock size={15} style={{ color: '#339af0', marginRight: 8, flexShrink: 0 }} /></span> // Blue
   }
 
   const renderStatusIcon = (status: string) => {
@@ -139,14 +159,23 @@ function DocumentTree({ docs, onDelete, onPrint, onView, onRename, onUploadVersi
                     borderBottom: '1px solid rgba(255,255,255,0.02)',
                     transition: 'background 0.1s'
                   }}
-                  onContextMenu={(e) => handleContextMenu(e, 'FILE', { id: d.id, name: d.name, filePath: d.filePath, category: d.category, version: d.currentVersion })}
+                  onContextMenu={(e) => handleContextMenu(e, 'FILE', {
+                    id: d.id,
+                    name: d.name,
+                    filePath: d.filePath,
+                    category: d.category,
+                    version: d.currentVersion,
+                    securityLevel: d.security_level
+                  })}
                   onDoubleClick={() => onView(d.id)}
                   onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
                   onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                   title={`상태: ${d.status}`}
                 >
-                  {/* Status Icon replaces Dot + FileText */}
+                  {/* Status Icon */}
                   {renderStatusIcon(d.status)}
+                  {/* Security Icon (Left of Filename) */}
+                  {renderSecurityIcon(d.security_level)}
 
                   <span className="truncate" style={{ fontSize: '0.9rem', color: '#e8ecf7', flex: 1 }}>
                     {d.name}
@@ -197,14 +226,27 @@ function DocumentTree({ docs, onDelete, onPrint, onView, onRename, onUploadVersi
           )}
           {contextMenu.type === 'FILE' && (
             <>
+              {contextMenu.securityLevel && (
+                <div className="ctx-item" style={{ cursor: 'default' }}>
+                  <Lock size={14} style={{
+                    marginRight: 8,
+                    color: (contextMenu.securityLevel === 'SECRET' || contextMenu.securityLevel === 'TOP_SECRET') ? '#ff6b6b' :
+                      (contextMenu.securityLevel === 'CONFIDENTIAL') ? '#ff922b' : '#339af0'
+                  }} />
+                  <span className="muted" style={{ fontSize: '0.85rem' }}>보안등급: {contextMenu.securityLevel}</span>
+                </div>
+              )}
               <div className="ctx-item" onClick={() => { onView(contextMenu.id!); setContextMenu(null); }}>
                 <FileText size={14} style={{ marginRight: 8 }} /> 상세보기
               </div>
               <div className="ctx-item" onClick={() => { onUploadVersion(contextMenu.id!); setContextMenu(null); }}>
-                <UploadCloud size={14} style={{ marginRight: 8 }} /> 새 버전 업로드 <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: '#868e96' }}>({contextMenu.version})</span>
+                <UploadCloud size={14} style={{ marginRight: 8 }} /> 새 버전 업로드
+              </div>
+              <div className="ctx-item" onClick={() => { onRenameFile(contextMenu.id!, contextMenu.name!); setContextMenu(null); }}>
+                <Pencil size={14} style={{ marginRight: 8 }} /> 파일명 변경
               </div>
               <div className="ctx-item" onClick={() => { onPrint(contextMenu.id!, contextMenu.name!, contextMenu.filePath); setContextMenu(null); }}>
-                <FileText size={14} style={{ marginRight: 8 }} /> 인쇄 / 다운로드
+                <FileText size={14} style={{ marginRight: 8 }} /> 인쇄
               </div>
               <div className="ctx-separator" style={{ height: 1, background: 'rgba(255,255,255,0.1)', margin: '4px 0' }}></div>
               <div className="ctx-item delete" onClick={() => { onDelete(contextMenu.id!, 'FILE'); setContextMenu(null); }}>
@@ -308,25 +350,43 @@ function DocumentsPage() {
     try {
       const ext = filePath ? filePath.split('.').pop() : 'pdf'
       const safeName = docName.replace(/[^a-zA-Z0-9가-힣\s\-_.]/g, '').trim()
-      const finalName = `${safeName}.${ext}`
-
-      // Build Absolute URL
-      let baseURL = apiClient.defaults.baseURL || '/api'
-      if (typeof baseURL === 'string' && !baseURL.startsWith('http')) {
-        baseURL = `${window.location.origin}${baseURL.startsWith('/') ? '' : '/'}${baseURL}`
-      }
-      if (typeof baseURL === 'string') {
-        baseURL = baseURL.replace(/\/$/, '')
+      let finalName = `${safeName}.${ext}`
+      if (ext && safeName.toLowerCase().endsWith(`.${ext.toLowerCase()}`)) {
+        finalName = safeName;
       }
 
-      // Open directly in new tab
-      // Server sets Content-Disposition: inline, so browser will preview it.
-      const targetUrl = `${baseURL}/docview/${docId}/${encodeURIComponent(finalName)}`
-      window.open(targetUrl, '_blank')
+      // Fetch as Blob
+      const response = await apiClient.get(`/docview/${docId}`, {
+        responseType: 'blob'
+      })
+
+      const blob = new Blob([response.data], { type: 'application/pdf' })
+      const blobUrl = URL.createObjectURL(blob)
+
+      if (!openPrintWindow(blobUrl, finalName)) {
+        show('브라우저에서 새 탭을 열 수 없어 인쇄창을 띄울 수 없습니다.', 'error')
+      }
+
+      // Cleanup blob url after a delay? 
+      // Window might need it for a bit.
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000)
 
     } catch (e) {
       console.error(e)
-      show('파일을 여는 중 오류가 발생했습니다.', 'error')
+      show('파일을 불러오는 중 오류가 발생했습니다.', 'error')
+    }
+  }
+
+  const handleRenameFile = async (id: string, currentName: string) => {
+    const newName = prompt('새 파일명을 입력하세요:', currentName)
+    if (!newName || newName === currentName) return
+
+    try {
+      await apiClient.patch(`/documents/${id}`, { name: newName })
+      refresh()
+      show('파일명이 변경되었습니다.', 'success')
+    } catch (err: any) {
+      show('파일명 변경 실패: ' + (err.response?.data?.error || err.message), 'error')
     }
   }
 
@@ -365,7 +425,7 @@ function DocumentsPage() {
             }}
           >
             <span style={{ fontWeight: 500, color: '#e8ecf7' }}>
-              프로젝트 산출물 (폴더 생성 : 우클릭)
+              프로젝트 산출물
             </span>
             <span className="muted" style={{ fontSize: '0.9rem' }}>
               <FolderOpen size={14} style={{ display: 'inline', marginRight: 4 }} />
@@ -379,6 +439,7 @@ function DocumentsPage() {
             onPrint={handlePrint}
             onView={(id) => { setSelectedDocId(id); setDetailInitialTab('info'); setIsDetailOpen(true); }}
             onRename={handleRenameCategory}
+            onRenameFile={handleRenameFile}
             onUploadVersion={handleUploadVersion}
             onCreateFolder={handleCreateFolder}
             onUploadDocument={handleUploadDocument}

@@ -16,7 +16,8 @@ const mapDocumentFromDB = (data: any): PmsDocument => ({
 
   // Versions Join
   filePath: data.file_path, // relative path "uploads/..."
-  fileSize: data.file_size ? Number(data.file_size) : 0
+  fileSize: data.file_size ? Number(data.file_size) : 0,
+  security_level: data.security_level // Map from snake_case DB to camelCase prop (though interface uses snake_case in Types currently, let's match)
 })
 
 const fetchDocuments = async (projectId?: string): Promise<PmsDocument[]> => {

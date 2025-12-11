@@ -129,6 +129,7 @@ export interface PmsDocument {
   // From Join
   filePath?: string
   fileSize?: number
+  security_level?: string // Backend returns snake_case
 }
 
 // Alias for compatibility if needed, or replace usages

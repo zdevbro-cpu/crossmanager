@@ -50,7 +50,10 @@
 - **[해결] Storage Bucket Not Found:**
   - 원인: Admin SDK 초기화 시 버킷명 미지정.
   - 조치: 명시적 버킷명(`crossmanager-1e21c.appspot.com`) 설정.
-- **데이터 보존:** DB 데이터는 영구 보존되나, 기존 `/uploads` 폴더(휘발성)에 있던 파일은 삭제됨 (재업로드 필요).
+- **[이슈] 클라우드 환경에서 파일 소실 (휘발성 저장소):**
+  - 증상: 배포 시 로컬 `uploads/` 폴더 초기화로 파일 유실.
+  - 1차 조치: DB(Base64) 임시 저장 (비용 이슈 존재).
+  - 최종 해결 계획: Firebase Cloud Storage 마이그레이션.
 
 ## 7. 남은 과제
 - **Contracts(계약/견적) 모듈 마이그레이션:**
@@ -77,3 +80,22 @@
   
 - **백엔드 (Firebase Functions)**
   - **문서 수정 API:** `PATCH /documents/:id` 구현 (Status, Security Level 통합 수정).
+
+## 8. 2025-12 저장소 최적화 및 UI 개선 계획
+
+### **1. 저장소 이전 (Local Server -> Firebase Cloud Storage)**
+> **현황 발견:** 배포된 Cloud Functions(`functions/`)에는 이미 **Firebase Storage** 업로드 로직이 구현되어 있어 파일이 정상적으로 저장되고 있었음.
+> **문제점:** 로컬 개발 서버(`server/`)는 아직 DB/Disk 방식을 사용 중이라 환경 불일치 발생.
+- **백엔드 수정 (`server/`):**
+  - 로컬 서버 코드도 `functions/`와 동일하게 **[Firebase Cloud Storage](https://firebase.google.com/docs/storage)**를 사용하도록 마이그레이션.
+  - `Multer` -> `Busboy`로 파서 변경 (Cloud Functions 호환성 확보).
+  - DB에는 파일 내용(`file_content`) 대신 경로(`documents/...`)만 저장.
+  - **[해결됨] 배포 서버 파일 404 원인:** 배포된 Cloud Functions는 **Serverless(임시 실행 환경)**이므로, 로컬 PC에 저장된 파일(`server/uploads/...`)을 가지고 있지 않음. 따라서 배포 시 로컬 경로는 유효하지 않게 되어 파일을 찾을 수 없었음. 이를 해결하기 위해 모든 파일을 중앙(Firebase Storage)에 저장하고 스트리밍하도록 변경함.
+- **프론트엔드 수정:**
+  - 특별한 변경 없음.
+
+### **2. UI 개선: 보안 등급 가시성 확보**
+- **목록 화면:**
+  - 보안등급 `SECRET`, `TOP_SECRET` 등: 문서명 옆 **자물쇠 아이콘(🔒)** 표시.
+- **Context Menu:**
+  - 우클릭 메뉴에 '보안등급: [등급]' 정보 추가.

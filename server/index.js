@@ -57,15 +57,41 @@ app.get('/api/file-proxy/:filename', (req, res) => {
 
 // Routes
 const contractsRouter = require('./routes/contracts')
-const documentsRouter = require('./routes/documents')
-console.log('Documents Router loaded:', !!documentsRouter, typeof documentsRouter)
+const { createDocumentsRouter } = require('./routes/documents')
 
 
 app.get('/api/test', (req, res) => res.json({ msg: 'Test works' }))
 // ------------------------------------------
+// ------------------------------------------
 // EMERGENCY FIX: View Routes prioritized in index.js to avoid router conflicts
 // ------------------------------------------
 
+// Database Configuration
+const dbConfig = {
+    user: process.env.DB_USER,
+    database: process.env.DB_NAME,
+    password: process.env.DB_PASSWORD,
+    port: process.env.DB_PORT || 5432,
+    host: process.env.DB_HOST || 'localhost'
+}
+
+// Socket support for Cloud SQL
+if (process.env.DB_HOST && process.env.DB_HOST.startsWith('/cloudsql')) {
+    dbConfig.host = process.env.DB_HOST
+} else {
+    // Local SSL setting
+    dbConfig.ssl = { rejectUnauthorized: false }
+}
+
+const pool = new Pool(dbConfig)
+
+pool.connect((err) => {
+    if (err) console.error('Database connection error', err.stack)
+    else console.log('Database connected successfully')
+})
+
+// 4.5 View Document File (Inline with Clean Name) - Current Version
+// 4.5 View Document File (Inline with Clean Name) - Current Version
 // 4.5 View Document File (Inline with Clean Name) - Current Version
 app.get(['/api/docview/:id/:filename', '/api/docview/:id'], async (req, res) => {
     try {
@@ -74,7 +100,7 @@ app.get(['/api/docview/:id/:filename', '/api/docview/:id'], async (req, res) => 
 
         // Robust Query: Get the latest version's file info
         const query = `
-            SELECT v.file_path, d.name
+            SELECT v.file_path, v.file_content, d.name
             FROM documents d
             JOIN document_versions v ON d.id = v.document_id
             WHERE d.id = $1
@@ -90,52 +116,83 @@ app.get(['/api/docview/:id/:filename', '/api/docview/:id'], async (req, res) => 
             return res.status(404).send('Document not found')
         }
 
-        const filePath = resDb.rows[0].file_path
-        const docName = resDb.rows[0].name || 'Document'
+        const row = resDb.rows[0];
+        const filePath = row.file_path
+        const fileContent = row.file_content
+        const docName = row.name || 'Document'
 
-        if (!filePath) {
-            console.log(`[Index.js View] File path missing for doc: ${id}`)
-            return res.status(404).send('File path missing')
+        let mimeType = 'application/octet-stream'
+        const ext = path.extname(filePath || docName).toLowerCase()
+        if (ext === '.pdf') mimeType = 'application/pdf'
+        else if (ext === '.png') mimeType = 'image/png'
+        else if (ext === '.jpg' || ext === '.jpeg') mimeType = 'image/jpeg'
+
+        // Safe filename for header
+        let safeName = docName.replace(/[^a-zA-Z0-9가-힣\s\-_.]/g, '').trim()
+        if (!safeName) safeName = 'document'
+        const downloadFilename = `${safeName}${ext}`
+        const encodedName = encodeURIComponent(downloadFilename)
+
+        res.setHeader('Content-Type', mimeType)
+        res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodedName}`)
+
+        // 1. Try DB Content (Base64) - Persistent Legacy
+        if (fileContent) {
+            const buffer = Buffer.from(fileContent, 'base64')
+            console.log(`[View] Serving from DB: ${buffer.length} bytes`)
+            return res.send(buffer)
         }
 
-        const fullPath = path.join(__dirname, 'uploads', path.basename(filePath))
-        // Note: filePath in DB is 'uploads/filename', but uploadsDir is '.../server/uploads'. 
-        // path.join(__dirname, 'uploads', 'uploads/filename') would be wrong.
-        // path.join(__dirname, filePath) would be '.../server/uploads/filename' which is correct IF filePath is 'uploads/filename'.
-        // Let's be safe: just use filename part relative to uploadsDir.
-        const safeFullPath = path.join(uploadsDir, path.basename(filePath))
+        // 2. Try Local Disk (Fallback or Legacy Local)
+        let fullPath = filePath ? path.join(__dirname, 'uploads', path.basename(filePath)) : null
 
-        console.log(`[Index.js View] Serving file: ${safeFullPath}`)
-
-        if (fs.existsSync(safeFullPath)) {
-            const ext = path.extname(safeFullPath).toLowerCase()
-            let safeName = docName.replace(/[^a-zA-Z0-9가-힣\s\-_.]/g, '').trim()
-            if (!safeName) safeName = 'document'
-
-            const requestedFilename = req.params.filename ? decodeURIComponent(req.params.filename) : null
-            const defaultFilename = `${safeName}${ext}`
-            const finalFilename = requestedFilename || defaultFilename
-            const encodedName = encodeURIComponent(finalFilename)
-
-            const stats = fs.statSync(safeFullPath)
-            console.log(`[Index.js View] File size: ${stats.size} bytes`)
-
-            let mimeType = 'application/octet-stream'
-            if (ext === '.pdf') mimeType = 'application/pdf'
-            else if (ext === '.png') mimeType = 'image/png'
-            else if (ext === '.jpg' || ext === '.jpeg') mimeType = 'image/jpeg'
-
-            res.setHeader('Content-Type', mimeType)
-            res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodedName}`)
-
-            res.sendFile(safeFullPath)
-        } else {
-            console.error(`[Index.js View] File missing on disk: ${safeFullPath}`)
-            res.status(404).send('File not found on server disk')
+        // If file_path is like "documents/...", it might be GCS. 
+        // If file_path is simple filename, it's local.
+        if (filePath && !filePath.includes('/')) {
+            fullPath = path.join(uploadsDir, filePath)
         }
+
+        if (fullPath && fs.existsSync(fullPath)) {
+            console.log(`[View] Serving file from disk: ${fullPath}`)
+            return res.sendFile(fullPath)
+        }
+
+        // 3. Try Firebase Bucket (New Standard)
+        const admin = require('firebase-admin')
+        if (!admin.apps.length) {
+            try { admin.initializeApp() } catch (e) { }
+        }
+
+        // Determine bucket name (Logic matches routes/documents.js)
+        let bucketName = 'crossmanager-1e21c.firebasestorage.app'
+        try {
+            if (process.env.FIREBASE_CONFIG) {
+                const config = JSON.parse(process.env.FIREBASE_CONFIG)
+                if (config.storageBucket) bucketName = config.storageBucket
+            }
+        } catch (e) { }
+
+        try {
+            const bucket = admin.storage().bucket(bucketName)
+            if (filePath && bucket) {
+                const file = bucket.file(filePath)
+                const [exists] = await file.exists()
+                if (exists) {
+                    console.log(`[View] Streaming from Bucket: ${filePath}`)
+                    // Create read stream and pipe to res
+                    return file.createReadStream().pipe(res)
+                }
+            }
+        } catch (e) {
+            console.warn("[View] Bucket stream failed:", e.message)
+        }
+
+        console.error(`[View] File missing on disk and cloud: ${filePath}`)
+        res.status(404).send('File not found (Server Storage)')
+
     } catch (err) {
-        console.error('[Index.js View] Error:', err)
-        res.status(500).send('Server Error')
+        console.error('[View] Error:', err)
+        res.status(500).send('Internal Server Error')
     }
 })
 
@@ -146,7 +203,7 @@ app.get(['/api/docview/versions/:versionId/:filename', '/api/docview/versions/:v
         console.log(`[Index.js View Version] Request for version id: ${versionId}`)
 
         const query = `
-            SELECT v.file_path, d.name, v.version
+            SELECT v.file_path, v.file_content, d.name, v.version
             FROM document_versions v
             JOIN documents d ON v.document_id = d.id
             WHERE v.id = $1
@@ -155,35 +212,41 @@ app.get(['/api/docview/versions/:versionId/:filename', '/api/docview/versions/:v
 
         if (resDb.rows.length === 0) return res.status(404).send('Version not found')
 
-        const filePath = resDb.rows[0].file_path
-        const docName = resDb.rows[0].name || 'Document'
-        const version = resDb.rows[0].version
+        const row = resDb.rows[0];
+        const filePath = row.file_path
+        const fileContent = row.file_content
+        const docName = row.name || 'Document'
+        const version = row.version
 
+        let mimeType = 'application/octet-stream'
+        const ext = path.extname(filePath || docName).toLowerCase()
+        if (ext === '.pdf') mimeType = 'application/pdf'
+        else if (ext === '.png') mimeType = 'image/png'
+        else if (ext === '.jpg' || ext === '.jpeg') mimeType = 'image/jpeg'
+
+        let safeName = docName.replace(/[^a-zA-Z0-9가-힣\s\-_.]/g, '').trim()
+        if (!safeName) safeName = 'document'
+        const requestedFilename = req.params.filename ? decodeURIComponent(req.params.filename) : null
+        const defaultFilename = `${safeName}_${version}${ext}`
+        const finalFilename = requestedFilename || defaultFilename
+        const encodedName = encodeURIComponent(finalFilename)
+
+        res.setHeader('Content-Type', mimeType)
+        res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodedName}`)
+
+        // 1. Try DB Content (Base64)
+        if (fileContent) {
+            const buffer = Buffer.from(fileContent, 'base64')
+            console.log(`[Index.js View Version] Serving from DB: ${buffer.length} bytes`)
+            return res.send(buffer)
+        }
+
+        // 2. Fallback to Disk
         if (!filePath) return res.status(404).send('File path missing')
 
-        // Same Path Safety Logic
         const safeFullPath = path.join(uploadsDir, path.basename(filePath))
 
         if (fs.existsSync(safeFullPath)) {
-            const ext = path.extname(safeFullPath).toLowerCase()
-            let safeName = docName.replace(/[^a-zA-Z0-9가-힣\s\-_.]/g, '').trim()
-            if (!safeName) safeName = 'document'
-
-            const requestedFilename = req.params.filename ? decodeURIComponent(req.params.filename) : null
-            const defaultFilename = `${safeName}_${version}${ext}`
-            const finalFilename = requestedFilename || defaultFilename
-            const encodedName = encodeURIComponent(finalFilename)
-
-            let mimeType = 'application/octet-stream'
-            if (ext === '.pdf') mimeType = 'application/pdf'
-            else if (ext === '.png') mimeType = 'image/png'
-            else if (ext === '.jpg' || ext === '.jpeg') mimeType = 'image/jpeg'
-
-            const stats = fs.statSync(safeFullPath)
-            console.log(`[Index.js View Version] File size: ${stats.size} bytes`)
-
-            res.setHeader('Content-Type', mimeType)
-            res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodedName}`)
             res.sendFile(safeFullPath)
         } else {
             res.status(404).send('File not found on server disk')
@@ -196,7 +259,7 @@ app.get(['/api/docview/versions/:versionId/:filename', '/api/docview/versions/:v
 
 
 app.use('/api/contracts', contractsRouter)
-app.use('/api/documents', documentsRouter)
+app.use('/api/documents', createDocumentsRouter(pool, uploadsDir))
 
 // Utility helpers
 const todayStr = () => new Date().toISOString().split('T')[0]
@@ -244,14 +307,7 @@ async function applyInventoryDelta(client, projectId, warehouseId, lines, multip
     }
 }
 
-const pool = new Pool({
-    user: process.env.DB_USER,
-    host: process.env.DB_HOST,
-    database: process.env.DB_NAME,
-    password: process.env.DB_PASSWORD,
-    port: process.env.DB_PORT || 5432,
-    ssl: { rejectUnauthorized: false }
-})
+
 
 pool.connect((err) => {
     if (err) {

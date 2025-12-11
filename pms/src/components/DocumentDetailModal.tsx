@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { X, FileText, Upload, ExternalLink, RefreshCw, Plus, Trash2, Pencil, Check } from 'lucide-react'
+import { X, FileText, Upload, ExternalLink, RefreshCw, Plus, Trash2, Pencil, Check, Edit2 } from 'lucide-react'
 import { apiClient } from '../lib/api'
 import { openPrintWindow } from '../utils/printWindow'
 import { useToast } from './ToastProvider'
@@ -147,7 +147,20 @@ export default function DocumentDetailModal({ documentId, onClose, onUpdate, ini
         }
 
         const ext = fileUrl ? fileUrl.split('.').pop() : 'pdf'
-        const safeName = data.name.replace(/[^a-zA-Z0-9가-힣\s\-_.]/g, '').trim()
+        // Check if data.level/name actually have extension
+        // data.name "설계서.pdf" -> safeName "설계서.pdf" -> finalName "설계서.pdf.pdf"
+        // We should strip extension from safeName if it matches ext.
+
+        let safeName = data.name.replace(/[^a-zA-Z0-9가-힣\s\-_.]/g, '').trim()
+
+        // If ext is valid and safeName ends with .ext, remove it, or just use safeName as is?
+        // Usually we want to ensure the extension IS present.
+        // Let's assume 'ext' extracted from fileUrl is correct (or defaults to pdf).
+
+        // Better: Remove extension from name if present
+        if (ext && safeName.toLowerCase().endsWith(`.${ext.toLowerCase()}`)) {
+            safeName = safeName.slice(0, -(ext.length + 1));
+        }
 
         // CASE 1: Specific Version -> Use Version View Route
         if (versionId) {
@@ -235,7 +248,7 @@ export default function DocumentDetailModal({ documentId, onClose, onUpdate, ini
 
     return (
         <div className="modal-overlay" onClick={onClose}>
-            <div className="modal-content" onClick={e => e.stopPropagation()} style={{ width: '800px', maxWidth: '90vw' }}>
+            <div className="modal-content" onClick={e => e.stopPropagation()} style={{ width: '480px', maxWidth: '90vw' }}>
                 <div className="modal-header" style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '1.5rem', marginBottom: '0', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                         <div style={{
@@ -291,14 +304,6 @@ export default function DocumentDetailModal({ documentId, onClose, onUpdate, ini
                             ) : (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                     <h3 style={{ margin: 0, fontSize: '1.25rem' }}>{data.name}</h3>
-                                    <button
-                                        className="icon-button"
-                                        onClick={() => setIsEditingName(true)}
-                                        title="문서명 변경"
-                                        style={{ opacity: 0.5, padding: '4px' }}
-                                    >
-                                        <Pencil size={16} />
-                                    </button>
                                 </div>
                             )}
                             <p className="muted" style={{ margin: 0, fontSize: '0.9rem' }}>
@@ -362,7 +367,7 @@ export default function DocumentDetailModal({ documentId, onClose, onUpdate, ini
                                     <select
                                         value={data.status}
                                         onChange={(e) => handleStatusChange(e.target.value)}
-                                        disabled={updatingStatus || data.status === 'APPROVED'}
+                                        disabled={updatingStatus}
                                         style={{
                                             padding: '2px 8px', borderRadius: '4px',
                                             background: data.status === 'APPROVED' ? '#222' : '#333',
@@ -372,10 +377,10 @@ export default function DocumentDetailModal({ documentId, onClose, onUpdate, ini
                                             cursor: data.status === 'APPROVED' ? 'not-allowed' : 'pointer'
                                         }}
                                     >
-                                        <option value="DRAFT">DRAFT</option>
-                                        <option value="PENDING">PENDING</option>
-                                        <option value="APPROVED">APPROVED</option>
-                                        <option value="REJECTED">REJECTED</option>
+                                        <option value="DRAFT">초안 (DRAFT)</option>
+                                        <option value="PENDING">검토 중 (PENDING)</option>
+                                        <option value="APPROVED">승인됨 (APPROVED)</option>
+                                        <option value="REJECTED">반려됨 (REJECTED)</option>
                                     </select>
                                 </div>
                             </div>

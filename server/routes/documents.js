@@ -1,367 +1,375 @@
 const express = require('express')
-const router = express.Router()
-const { Pool } = require('pg')
-const multer = require('multer')
+const Busboy = require('busboy')
 const path = require('path')
 const fs = require('fs')
+const admin = require('firebase-admin')
+const { validate: isUuid } = require('uuid')
 
-const pool = new Pool({
-    user: process.env.DB_USER,
-    host: process.env.DB_HOST,
-    database: process.env.DB_NAME,
-    password: process.env.DB_PASSWORD,
-    port: process.env.DB_PORT || 5432,
-    ssl: { rejectUnauthorized: false }
-})
-
-// Configure Multer for Documents
-const uploadsDir = path.join(__dirname, '../uploads')
-if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true })
+// Initialize Firebase Admin if not already initialized
+if (!admin.apps.length) {
+    // Try with warning if no credentials
+    try {
+        admin.initializeApp()
+    } catch (e) {
+        console.warn("Firebase Init Error (might lack credentials):", e.message)
+    }
 }
 
-const storage = multer.diskStorage({
-    destination: function (req, file, cb) {
-        cb(null, uploadsDir)
-    },
-    filename: function (req, file, cb) {
-        // Safe filename: timestamp-original
-        // Fix for Korean filename encoding issue (latin1 to utf8)
-        const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8')
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9)
-        cb(null, uniqueSuffix + '-' + originalName.replace(/\s+/g, '_'))
+// Determine bucket name from env or fallback
+// Note: In Cloud Functions Gen 2, FIREBASE_CONFIG might be present.
+let bucketName = 'crossmanager-1e21c.firebasestorage.app' // Standard Firebase bucket
+try {
+    if (process.env.FIREBASE_CONFIG) {
+        const config = JSON.parse(process.env.FIREBASE_CONFIG)
+        if (config.storageBucket) bucketName = config.storageBucket
     }
-})
+} catch (e) { }
 
-const upload = multer({
-    storage: storage,
-    limits: { fileSize: 50 * 1024 * 1024 } // 50MB
-})
+// Forcing explicit bucket name to avoid "bucket not found"
+console.log('Using Storage Bucket:', bucketName)
 
-// ------------------------------------------
-// API Routes
-// ------------------------------------------
+let bucket;
+try {
+    bucket = admin.storage().bucket(bucketName)
+} catch (e) {
+    console.warn("Bucket init failed (likely no creds):", e.message)
+}
 
-router.use((req, res, next) => {
-    console.log('Documents Router Middleware Hit:', req.method, req.url)
-    next()
-})
+const createDocumentsRouter = (pool, uploadsDir) => {
+    const router = express.Router()
 
-// ------------------------------------------
-// View Routes (Must be before /:id to ensure precedence if ambiguity exists)
-// ------------------------------------------
-
-// 4.5 View Document File (Inline with Clean Name) - Current Version
-router.get('/:id/view', async (req, res) => {
-    try {
-        const { id } = req.params
-        console.log(`[View] Request for doc id: ${id}`)
-
-        // Robust Query: Get the latest version's file info
-        const query = `
-            SELECT v.file_path, d.name
-            FROM documents d
-            JOIN document_versions v ON d.id = v.document_id
-            WHERE d.id = $1
-            ORDER BY 
-                CASE WHEN d.current_version = v.version THEN 1 ELSE 2 END,
-                v.created_at DESC
-            LIMIT 1
-        `
-        const resDb = await pool.query(query, [id])
-
-        if (resDb.rows.length === 0) {
-            console.log(`[View] Document not found or no versions: ${id}`)
-            return res.status(404).send('Document not found')
-        }
-
-        const filePath = resDb.rows[0].file_path
-        const docName = resDb.rows[0].name || 'Document'
-
-        if (!filePath) {
-            console.log(`[View] File path missing for doc: ${id}`)
-            return res.status(404).send('File path missing')
-        }
-
-        const fullPath = path.join(__dirname, '../', filePath)
-        console.log(`[View] Serving file: ${fullPath}`)
-
-        if (fs.existsSync(fullPath)) {
-            const ext = path.extname(fullPath).toLowerCase()
-            let safeName = docName.replace(/[^a-zA-Z0-9가-힣\s\-_.]/g, '').trim()
-            if (!safeName) safeName = 'document'
-
-            const downloadFilename = `${safeName}${ext}`
-            const encodedName = encodeURIComponent(downloadFilename)
-
-            let mimeType = 'application/octet-stream'
-            if (ext === '.pdf') mimeType = 'application/pdf'
-            else if (ext === '.png') mimeType = 'image/png'
-            else if (ext === '.jpg' || ext === '.jpeg') mimeType = 'image/jpeg'
-
-            res.setHeader('Content-Type', mimeType)
-            res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodedName}`)
-            res.sendFile(fullPath)
-        } else {
-            console.error(`[View] File missing on disk: ${fullPath}`)
-            res.status(404).send('File not found on server disk')
-        }
-    } catch (err) {
-        console.error('[View] Error:', err)
-        res.status(500).send('Server Error')
+    // Ensure uploads directory exists
+    if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true })
     }
-})
 
-// 4.6 View Document Version File (Inline with Clean Name)
-router.get('/versions/:versionId/view', async (req, res) => {
-    try {
-        const { versionId } = req.params
-        console.log(`[View Version] Request for version id: ${versionId}`)
+    // Request splitting/logging
+    router.use((req, _res, next) => {
+        // console.log('[documents]', req.method, req.url) // Optional verbose logging
+        next()
+    })
 
-        const query = `
-            SELECT v.file_path, d.name, v.version
-            FROM document_versions v
-            JOIN documents d ON v.document_id = d.id
-            WHERE v.id = $1
-        `
-        const resDb = await pool.query(query, [versionId])
+    // Helper: Process Multipart Upload with Busboy
+    const processUpload = (req) => {
+        return new Promise((resolve, reject) => {
+            const busboy = Busboy({
+                headers: req.headers,
+                defParamCharset: 'utf8'
+            })
+            const fields = {}
+            let fileData = null
 
-        if (resDb.rows.length === 0) return res.status(404).send('Version not found')
+            busboy.on('field', (fieldname, val) => {
+                fields[fieldname] = val
+            })
 
-        const filePath = resDb.rows[0].file_path
-        const docName = resDb.rows[0].name || 'Document'
-        const version = resDb.rows[0].version
+            busboy.on('file', (fieldname, file, info) => {
+                const { filename, encoding, mimeType } = info
 
-        if (!filePath) return res.status(404).send('File path missing')
+                // With defParamCharset: 'utf8', filename is usually correct.
+                // If it still breaks, we might need a conditional check, but standard Fetch + Busboy works with utf8 option.
+                const safeFilename = filename
 
-        const fullPath = path.join(__dirname, '../', filePath)
+                const saveName = `${Date.now()}-${safeFilename}`
+                const savePath = path.join(uploadsDir, saveName)
 
-        if (fs.existsSync(fullPath)) {
-            const ext = path.extname(fullPath).toLowerCase()
-            let safeName = docName.replace(/[^a-zA-Z0-9가-힣\s\-_.]/g, '').trim()
-            if (!safeName) safeName = 'document'
+                fileData = {
+                    originalName: safeFilename,
+                    encoding,
+                    mimeType,
+                    filename: saveName,
+                    path: savePath,
+                    size: 0
+                }
 
-            const downloadFilename = `${safeName}_${version}${ext}`
-            const encodedName = encodeURIComponent(downloadFilename)
+                const writeStream = fs.createWriteStream(savePath)
+                file.pipe(writeStream)
 
-            let mimeType = 'application/octet-stream'
-            if (ext === '.pdf') mimeType = 'application/pdf'
-            else if (ext === '.png') mimeType = 'image/png'
-            else if (ext === '.jpg' || ext === '.jpeg') mimeType = 'image/jpeg'
+                writeStream.on('finish', () => {
+                    fileData.size = writeStream.bytesWritten
+                })
+            })
 
-            res.setHeader('Content-Type', mimeType)
-            res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodedName}`)
-            res.sendFile(fullPath)
-        } else {
-            res.status(404).send('File not found on server disk')
-        }
-    } catch (err) {
-        console.error('[View Version] Error:', err)
-        res.status(500).send('Server Error')
-    }
-})
+            busboy.on('finish', () => {
+                resolve({ fields, file: fileData })
+            })
 
-// 1. Get All Documents (Filter by projectId, category)
-router.get('/', async (req, res) => {
-    console.log('GET /api/documents hit')
-    try {
-        const { projectId, category, type, search } = req.query
-        let query = `
-            SELECT d.*, v.file_path, v.file_size, v.version as latest_version_name 
-            FROM documents d
-            LEFT JOIN document_versions v ON d.id = v.document_id AND d.current_version = v.version
-        `
-        let conditions = []
-        let params = []
+            busboy.on('error', (err) => reject(err))
 
-        if (projectId) {
-            conditions.push(`d.project_id = $${params.length + 1}`)
-            params.push(projectId)
-        }
-        if (category) {
-            conditions.push(`d.category = $${params.length + 1}`)
-            params.push(category)
-        }
-        if (type) {
-            conditions.push(`d.type = $${params.length + 1}`)
-            params.push(type)
-        }
-        if (search) {
-            conditions.push(`d.name ILIKE $${params.length + 1}`)
-            params.push(`%${search}%`)
-        }
-
-        if (conditions.length > 0) {
-            query += ' WHERE ' + conditions.join(' AND ')
-        }
-
-        query += ' ORDER BY d.created_at DESC'
-
-        const { rows } = await pool.query(query, params)
-        res.json(rows)
-    } catch (err) {
-        console.error(err)
-        res.status(500).json({ error: 'Failed to fetch documents' })
-    }
-})
-
-// 2. Upload New Document (First Version)
-router.post('/upload', upload.single('file'), async (req, res) => {
-    const client = await pool.connect()
-    try {
-        await client.query('BEGIN')
-
-        const { projectId, category, type, name, status, securityLevel, metadata } = req.body
-        const file = req.file
-
-        if (!file) {
-            throw new Error('No file uploaded')
-        }
-
-        // Fix safe encoding for originalname 
-        file.originalname = Buffer.from(file.originalname, 'latin1').toString('utf8')
-
-        // 1. Insert Master
-        const masterSql = `
-            INSERT INTO documents (
-                project_id, category, type, name, status, 
-                current_version, security_level, metadata
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-            RETURNING id
-        `
-        // Defaults
-        const docName = name || file.originalname
-        const docStatus = status || 'DRAFT'
-        const initialVersion = 'v1'
-        const secLevel = securityLevel || 'NORMAL'
-        const jsonMeta = metadata ? JSON.parse(metadata) : {}
-
-        const { rows: masterRows } = await client.query(masterSql, [
-            projectId || null, category, type, docName, docStatus,
-            initialVersion, secLevel, JSON.stringify(jsonMeta)
-        ])
-        const documentId = masterRows[0].id
-
-        // 2. Insert Version
-        const versionSql = `
-            INSERT INTO document_versions (
-                document_id, version, file_path, file_size
-            ) VALUES ($1, $2, $3, $4)
-        `
-        // Store relative path or full URL depending on requirement. 
-        // Index.js serves '/uploads', so we store 'uploads/filename' or just filename
-        // Let's store relative path for flexibility.
-        const filePath = `uploads/${file.filename}`
-
-        await client.query(versionSql, [
-            documentId, initialVersion, filePath, file.size
-        ])
-
-        await client.query('COMMIT')
-
-        res.status(201).json({
-            message: 'Document uploaded successfully',
-            documentId,
-            version: initialVersion,
-            file: file.filename
+            if (req.rawBody) {
+                busboy.end(req.rawBody)
+            } else {
+                req.pipe(busboy)
+            }
         })
-
-    } catch (err) {
-        await client.query('ROLLBACK')
-        console.error(err)
-        // clean up file if db failed
-        if (req.file && fs.existsSync(req.file.path)) {
-            fs.unlinkSync(req.file.path)
-        }
-        res.status(500).json({ error: 'Failed to upload document', details: err.message })
-    } finally {
-        client.release()
     }
-})
 
-// 3. Upload New Version (v2, v3...)
-router.post('/:id/versions', upload.single('file'), async (req, res) => {
-    const client = await pool.connect()
-    try {
-        await client.query('BEGIN')
+    // 1. Upload New Document
+    router.post('/upload', async (req, res) => {
+        const client = await pool.connect()
+        let uploadedFile = null
+
+        try {
+            const { fields, file } = await processUpload(req)
+            uploadedFile = file
+
+            if (!file) throw new Error('No file uploaded')
+
+            console.log('Fields:', fields)
+
+            const { projectId, category, type, name, status, securityLevel, metadata } = fields
+            // Fix projectId "null" string issue
+            const pId = (projectId === 'null' || !projectId) ? null : projectId
+
+            // --- Upload to Firebase Storage or Local Fallback ---
+            const destination = `documents/${pId || 'global'}/${file.filename}`
+            let dbFilePath = destination
+
+            if (bucket) {
+                await bucket.upload(file.path, {
+                    destination: destination,
+                    metadata: {
+                        contentType: file.mimeType,
+                    }
+                })
+                // Remove temp file only if uploaded to bucket
+                try { fs.unlinkSync(file.path) } catch (e) { }
+            } else {
+                console.warn("Skipping Storage Upload (No Bucket), keeping file locally.")
+                // If local, we store the filename in uploads dir so legacy download works
+                dbFilePath = file.filename
+                // Do NOT unlink file.path
+            }
+            // ----------------------------------
+
+            await client.query('BEGIN')
+
+            // Insert into documents table
+            const docRes = await client.query(`
+        INSERT INTO documents (
+          project_id, category, type, name, status, security_level, current_version, metadata
+        ) VALUES ($1, $2, $3, $4, $5, $6, 'v1', $7)
+        RETURNING id
+      `, [pId, category, type, name, status || 'DRAFT', securityLevel || 'NORMAL', metadata ? JSON.parse(metadata) : null])
+
+            const docId = docRes.rows[0].id
+
+            // Insert into document_versions table
+            await client.query(`
+        INSERT INTO document_versions (
+          document_id, version, file_path, file_size, change_log
+        ) VALUES ($1, 'v1', $2, $3, 'Initial upload')
+      `, [docId, dbFilePath, file.size])
+
+            await client.query('COMMIT')
+
+            res.status(201).json({
+                message: 'Document uploaded successfully',
+                documentId: docId
+            })
+
+        } catch (err) {
+            if (client) await client.query('ROLLBACK')
+            console.error('Upload document error:', err)
+
+            // Clean up temp file if exists
+            if (uploadedFile && fs.existsSync(uploadedFile.path)) {
+                try { fs.unlinkSync(uploadedFile.path) } catch (e) { }
+            }
+
+            res.status(500).json({
+                error: 'Failed to upload document',
+                details: err.message,
+                stack: err.stack,
+                code: err.code
+            })
+        } finally {
+            if (client) client.release()
+        }
+    })
+
+    // 2. Upload New Version
+    router.post('/:id/versions', async (req, res) => {
         const { id } = req.params
-        const { changeLog } = req.body
-        const file = req.file
+        const client = await pool.connect()
+        let uploadedFile = null
 
-        if (!file) {
-            throw new Error('No file uploaded')
+        try {
+            const { fields, file } = await processUpload(req)
+            uploadedFile = file
+
+            if (!file) throw new Error('No file uploaded')
+
+            const { changeLog, version: userVersion } = fields
+
+            // Get current version logic...
+            const docRes = await client.query('SELECT current_version, project_id FROM documents WHERE id = $1', [id])
+            if (docRes.rows.length === 0) {
+                throw new Error('Document not found')
+            }
+
+            let nextVer = ''
+            if (userVersion && userVersion.trim()) {
+                nextVer = userVersion.trim()
+            } else {
+                // Auto-increment fallback
+                const currentVer = docRes.rows[0].current_version || 'v0'
+                const currentNum = parseInt(currentVer.replace(/[^0-9]/g, '')) || 0
+                nextVer = `v${currentNum + 1}`
+            }
+
+            // --- Upload to Firebase Storage or Local Fallback ---
+            const destination = `documents/${docRes.rows[0].project_id || 'global'}/${file.filename}`
+            let dbFilePath = destination
+
+            if (bucket) {
+                await bucket.upload(file.path, {
+                    destination: destination,
+                    metadata: {
+                        contentType: file.mimeType,
+                    }
+                })
+                try { fs.unlinkSync(file.path) } catch (e) { }
+            } else {
+                // Fallback
+                dbFilePath = file.filename
+            }
+            // ----------------------------------
+
+            await client.query('BEGIN')
+
+            // Insert version
+            await client.query(`
+        INSERT INTO document_versions (
+          document_id, version, file_path, file_size, change_log
+        ) VALUES ($1, $2, $3, $4, $5)
+      `, [id, nextVer, dbFilePath, file.size, changeLog])
+
+            // Update document current_version
+            await client.query(`
+        UPDATE documents SET current_version = $1, updated_at = NOW() WHERE id = $2
+      `, [nextVer, id])
+
+            await client.query('COMMIT')
+
+            res.status(201).json({ message: 'New version uploaded', version: nextVer })
+
+        } catch (err) {
+            if (client) await client.query('ROLLBACK')
+            console.error('Version upload error:', err)
+            if (uploadedFile && fs.existsSync(uploadedFile.path)) {
+                try { fs.unlinkSync(uploadedFile.path) } catch (e) { }
+            }
+            res.status(500).json({ error: 'Failed to upload version', details: err.message })
+        } finally {
+            if (client) client.release()
         }
+    })
 
-        // 1. Get current version count to increment
-        const countRes = await client.query('SELECT COUNT(*) FROM document_versions WHERE document_id = $1', [id])
-        const nextVerNum = parseInt(countRes.rows[0].count) + 1
-        const nextVersion = `v${nextVerNum}`
+    // 3. Get All Documents
+    router.get('/', async (req, res) => {
+        try {
+            const { projectId, category, type, search } = req.query
+            let query = `
+        SELECT d.*, v.file_path, v.file_size, v.version, v.created_at as version_date
+        FROM documents d
+        LEFT JOIN document_versions v ON d.id = v.document_id AND d.current_version = v.version
+      `
+            const params = []
+            const conditions = []
 
-        // 2. Insert New Version
-        const filePath = `uploads/${file.filename}`
-        await client.query(`
-            INSERT INTO document_versions (document_id, version, file_path, file_size, change_log)
-            VALUES ($1, $2, $3, $4, $5)
-        `, [id, nextVersion, filePath, file.size, changeLog])
+            if (projectId) {
+                conditions.push(`d.project_id = $${params.length + 1}`)
+                params.push(projectId)
+            }
+            if (category) {
+                conditions.push(`d.category = $${params.length + 1}`)
+                params.push(category)
+            }
+            if (type) {
+                conditions.push(`d.type = $${params.length + 1}`)
+                params.push(type)
+            }
+            if (search) {
+                conditions.push(`d.name ILIKE $${params.length + 1}`)
+                params.push(`%${search}%`)
+            }
 
-        // 3. Update Master Current Version
-        await client.query(`
-            UPDATE documents SET current_version = $1, updated_at = NOW() WHERE id = $2
-        `, [nextVersion, id])
+            if (conditions.length > 0) {
+                query += ' WHERE ' + conditions.join(' AND ')
+            }
 
-        await client.query('COMMIT')
+            query += ' ORDER BY d.created_at DESC'
 
-        res.json({ message: 'New version uploaded', version: nextVersion })
+            const { rows } = await pool.query(query, params)
+            res.json(rows)
+        } catch (err) {
+            console.error(err)
+            res.status(500).json({ error: 'Failed to fetch documents' })
+        }
+    })
 
-    } catch (err) {
-        await client.query('ROLLBACK')
-        console.error(err)
-        if (req.file) fs.unlinkSync(req.file.path)
-        res.status(500).json({ error: 'Failed to upload new version' })
-    } finally {
-        client.release()
-    }
-})
+    // 4. Get Document Detail (with Signed URL)
+    router.get('/:id', async (req, res) => {
+        try {
+            const { id } = req.params
+            const query = `
+        SELECT d.*, v.file_path, v.file_size, v.version, v.change_log, v.created_at as version_date
+        FROM documents d
+        LEFT JOIN document_versions v ON d.id = v.document_id AND d.current_version = v.version
+        WHERE d.id = $1
+      `
+            const { rows } = await pool.query(query, [id])
+            if (rows.length === 0) return res.status(404).json({ error: 'Document not found' })
 
-// 4. Get Document Details (with Version History)
-router.get('/:id', async (req, res) => {
-    try {
+            const doc = rows[0]
+            const verRes = await pool.query(`
+        SELECT * FROM document_versions 
+        WHERE document_id = $1 
+        ORDER BY created_at DESC
+      `, [id])
+
+            // Generate Signed URL for the current version if file_path is available
+            if (doc.file_path) {
+                // Check if it's a Storage path (doesn't start with http or /)
+                if (!doc.file_path.startsWith('http') && !doc.file_path.startsWith('/') && bucket) {
+                    try {
+                        const [url] = await bucket.file(doc.file_path).getSignedUrl({
+                            action: 'read',
+                            expires: Date.now() + 1000 * 60 * 60, // 1 hour
+                        })
+                        doc.downloadUrl = url
+                    } catch (e) {
+                        console.error('Error signing URL:', e)
+                    }
+                } else {
+                    // Legacy local path support or no bucket
+                    doc.downloadUrl = `/uploads/${path.basename(doc.file_path)}`
+                }
+            }
+
+            res.json({ ...doc, versions: verRes.rows })
+        } catch (err) {
+            console.error(err)
+            res.status(500).json({ error: 'Failed to fetch document' })
+        }
+    })
+
+    // 5. Update Metadata (Status, Security Level) - NEW
+    router.patch('/:id/status', async (req, res) => {
         const { id } = req.params
-
-        // 1. Get Master Data + Join with Current Version Info
-        const query = `
-            SELECT d.*, v.file_path, v.file_size
-            FROM documents d
-            LEFT JOIN document_versions v ON d.id = v.document_id AND d.current_version = v.version
-            WHERE d.id = $1
-        `
-        const docRes = await pool.query(query, [id])
-
-        if (docRes.rows.length === 0) {
-            return res.status(404).json({ error: 'Document not found' })
+        const { status } = req.body
+        if (!status) return res.status(400).json({ error: 'Status is required' })
+        try {
+            await pool.query('UPDATE documents SET status = $1, updated_at = NOW() WHERE id = $2', [status, id])
+            res.json({ message: 'Status updated' })
+        } catch (err) {
+            console.error(err)
+            res.status(500).json({ error: 'Failed to update status' })
         }
-        const doc = docRes.rows[0]
+    })
 
-        // 2. Get Versions
-        const verRes = await pool.query(`
-            SELECT * FROM document_versions 
-            WHERE document_id = $1 
-            ORDER BY created_at DESC
-        `, [id])
-
-        res.json({
-            ...doc,
-            versions: verRes.rows
-        })
-    } catch (err) {
-        console.error(err)
-        res.status(500).json({ error: 'Failed to fetch document details' })
-    }
-})
-
-// 5. Update Status / Security Level / Name
-router.patch('/:id', async (req, res) => {
-    try {
+    router.patch('/:id', async (req, res) => {
         const { id } = req.params
         const { status, securityLevel, name } = req.body
 
@@ -369,191 +377,113 @@ router.patch('/:id', async (req, res) => {
         const params = [id]
 
         if (status) {
-            updates.push(`status = $${params.length + 1}`)
             params.push(status)
+            updates.push(`status = $${params.length}`)
         }
         if (securityLevel) {
-            updates.push(`security_level = $${params.length + 1}`)
             params.push(securityLevel)
+            updates.push(`security_level = $${params.length}`)
         }
         if (name) {
-            updates.push(`name = $${params.length + 1}`)
             params.push(name)
+            updates.push(`name = $${params.length}`)
         }
 
-        if (updates.length > 0) {
-            await pool.query(`UPDATE documents SET ${updates.join(', ')} WHERE id = $1`, params)
+        if (updates.length === 0) return res.json({ message: 'No changes provided' })
+
+        try {
+            await pool.query(`UPDATE documents SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $1`, params)
             res.json({ message: 'Document updated successfully' })
-        } else {
-            res.json({ message: 'No changes provided' })
+        } catch (err) {
+            console.error(err)
+            res.status(500).json({ error: 'Failed to update document' })
         }
-    } catch (err) {
-        console.error(err)
-        res.status(500).json({ error: 'Failed to update document' })
-    }
-})
+    })
 
-// 6. Delete Document
-router.delete('/:id', async (req, res) => {
-    try {
-        // On Delete Cascade will handle versions, but files remain on disk.
-        // For MVP, we leave files on disk (safer).
-        const { id } = req.params
-        await pool.query('DELETE FROM documents WHERE id = $1', [id])
-        res.json({ message: 'Document deleted' })
-    } catch (err) {
-        console.error(err)
-        res.status(500).json({ error: 'Failed to delete document' })
-    }
-})
+    // 6. Delete Document
+    router.delete('/:id', async (req, res) => {
+        const client = await pool.connect()
+        try {
+            await client.query('BEGIN')
+            const { id } = req.params
 
-// 7. Delete Specific Version
-router.delete('/:id/versions/:versionId', async (req, res) => {
-    const client = await pool.connect()
-    try {
-        await client.query('BEGIN')
-        const { id, versionId } = req.params
+            // Get all file paths associated with this document
+            const verRes = await client.query('SELECT file_path FROM document_versions WHERE document_id = $1', [id])
 
-        // 1. Get Version Info
-        const verRes = await client.query('SELECT * FROM document_versions WHERE id = $1 AND document_id = $2', [versionId, id])
-        if (verRes.rows.length === 0) {
-            await client.query('ROLLBACK')
-            return res.status(404).json({ error: 'Version not found' })
-        }
-        const targetVer = verRes.rows[0]
-
-        // 2. Delete File from Disk
-        const fullPath = path.join(__dirname, '../', targetVer.file_path)
-        if (fs.existsSync(fullPath)) {
-            try {
-                fs.unlinkSync(fullPath)
-            } catch (fsErr) {
-                console.error('File delete error:', fsErr)
-            }
-        }
-
-        // 3. Delete from DB
-        await client.query('DELETE FROM document_versions WHERE id = $1', [versionId])
-
-        // 4. Update Master if needed
-        // Check current master version
-        const docRes = await client.query('SELECT current_version FROM documents WHERE id = $1', [id])
-        if (docRes.rows.length > 0) {
-            const currentVer = docRes.rows[0].current_version
-            if (currentVer === targetVer.version) {
-                // We deleted the current version, so find the new latest
-                const latestRes = await client.query('SELECT version FROM document_versions WHERE document_id = $1 ORDER BY created_at DESC LIMIT 1', [id])
-                if (latestRes.rows.length > 0) {
-                    const newLatest = latestRes.rows[0].version
-                    await client.query('UPDATE documents SET current_version = $1 WHERE id = $2', [newLatest, id])
-                } else {
-                    // No versions left
-                    await client.query("UPDATE documents SET current_version = '-' WHERE id = $1", [id])
+            // Delete files from Firebase Storage
+            if (bucket) {
+                for (const row of verRes.rows) {
+                    if (row.file_path && !row.file_path.startsWith('http') && !row.file_path.startsWith('/')) {
+                        try {
+                            await bucket.file(row.file_path).delete()
+                        } catch (storageErr) {
+                            console.warn(`Failed to delete file from Storage:`, storageErr.message)
+                        }
+                    }
                 }
             }
+
+            await client.query('DELETE FROM documents WHERE id = $1', [id])
+            await client.query('COMMIT')
+            res.json({ message: 'Document deleted' })
+        } catch (err) {
+            await client.query('ROLLBACK')
+            console.error(err)
+            res.status(500).json({ error: 'Failed to delete document' })
+        } finally {
+            client.release()
         }
+    })
 
-        await client.query('COMMIT')
-        res.json({ message: 'Version deleted' })
+    // 7. Delete Version
+    router.delete('/:id/versions/:versionId', async (req, res) => {
+        const client = await pool.connect()
+        try {
+            await client.query('BEGIN')
+            const { id, versionId } = req.params
 
-    } catch (err) {
-        await client.query('ROLLBACK')
-        console.error(err)
-        res.status(500).json({ error: 'Failed to delete version' })
-    } finally {
-        client.release()
-    }
-})
+            const verRes = await client.query('SELECT * FROM document_versions WHERE id = $1 AND document_id = $2', [versionId, id])
+            if (verRes.rows.length === 0) {
+                await client.query('ROLLBACK')
+                return res.status(404).json({ error: 'Version not found' })
+            }
+            const targetVer = verRes.rows[0]
+            const storagePath = targetVer.file_path
 
-// 8. Create Empty Folder (Placeholder Document)
-router.post('/folder', async (req, res) => {
-    const client = await pool.connect()
-    try {
-        await client.query('BEGIN')
-        const { projectId, category } = req.body
+            // Delete from Storage
+            if (bucket && storagePath && !storagePath.startsWith('http') && !storagePath.startsWith('/')) {
+                try { await bucket.file(storagePath).delete() } catch (e) { }
+            }
 
-        if (!projectId || !category) {
-            return res.status(400).json({ error: 'Project ID and Category Name required' })
+            await client.query('DELETE FROM document_versions WHERE id = $1', [versionId])
+
+            // Update current version logic...
+            const docRes = await client.query('SELECT current_version FROM documents WHERE id = $1', [id])
+            if (docRes.rows.length > 0) {
+                const currentVer = docRes.rows[0].current_version
+                if (currentVer === targetVer.version) {
+                    const latestRes = await client.query('SELECT version FROM document_versions WHERE document_id = $1 ORDER BY created_at DESC LIMIT 1', [id])
+                    if (latestRes.rows.length > 0) {
+                        const newLatest = latestRes.rows[0].version
+                        await client.query('UPDATE documents SET current_version = $1 WHERE id = $2', [newLatest, id])
+                    } else {
+                        await client.query("UPDATE documents SET current_version = '-' WHERE id = $1", [id])
+                    }
+                }
+            }
+
+            await client.query('COMMIT')
+            res.json({ message: 'Version deleted' })
+        } catch (err) {
+            await client.query('ROLLBACK')
+            console.error('Delete version error:', err)
+            res.status(500).json({ error: 'Failed to delete version', details: err.message })
+        } finally {
+            client.release()
         }
+    })
 
-        // Check if category already exists (optional, but good for cleanliness)
-        // Actually, we just want to ensure at least one doc exists.
-        // If we create a placeholder, it might show up as a file if we don't filter it out in UI.
-        // We will mark it as type='FOLDER' and status='SYSTEM'.
+    return router
+}
 
-        const query = `
-            INSERT INTO documents (
-                project_id, category, type, name, status, 
-                current_version, security_level
-            ) VALUES ($1, $2, 'FOLDER', $2, 'SYSTEM', '-', 'NORMAL')
-            RETURNING id
-        `
-        const { rows } = await client.query(query, [projectId, category])
-
-        await client.query('COMMIT')
-        res.status(201).json({ message: 'Folder created', id: rows[0].id })
-
-    } catch (err) {
-        await client.query('ROLLBACK')
-        console.error(err)
-        res.status(500).json({ error: 'Failed to create folder' })
-    } finally {
-        client.release()
-    }
-})
-
-// 9. Rename Category
-router.patch('/category', async (req, res) => {
-    try {
-        const { projectId, oldCategory, newCategory } = req.body
-
-        if (!projectId || !oldCategory || !newCategory) {
-            return res.status(400).json({ error: 'Missing required fields' })
-        }
-
-        const query = `
-            UPDATE documents 
-            SET category = $1 
-            WHERE project_id = $2 AND category = $3
-        `
-        await pool.query(query, [newCategory, projectId, oldCategory])
-
-        // Also update the placeholder document name if it exists
-        await pool.query(`
-            UPDATE documents
-            SET name = $1
-            WHERE project_id = $2 AND category = $1 AND type = 'FOLDER'
-        `, [newCategory, projectId])
-
-        res.json({ message: 'Category renamed' })
-    } catch (err) {
-        console.error(err)
-        res.status(500).json({ error: 'Failed to rename category' })
-    }
-})
-
-// 10. Delete Category
-router.delete('/category', async (req, res) => {
-    try {
-        const { projectId, category } = req.query
-
-        if (!projectId || !category) {
-            return res.status(400).json({ error: 'Missing required fields' })
-        }
-
-        // Delete all documents in this category
-        // Note: Files on disk will remain (MVP limitation as per deletion route)
-        const query = `
-            DELETE FROM documents 
-            WHERE project_id = $1 AND category = $2
-        `
-        await pool.query(query, [projectId, category])
-
-        res.json({ message: 'Category deleted' })
-    } catch (err) {
-        console.error(err)
-        res.status(500).json({ error: 'Failed to delete category' })
-    }
-})
-
-module.exports = router
+module.exports = { createDocumentsRouter }
