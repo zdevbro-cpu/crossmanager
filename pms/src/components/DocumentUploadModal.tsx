@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { X, Upload, FileText, Paperclip } from 'lucide-react'
 import { apiClient } from '../lib/api'
 import { useToast } from './ToastProvider'
@@ -8,9 +8,10 @@ import { useProjects } from '../hooks/useProjects'
 interface DocumentUploadModalProps {
     onClose: () => void
     onSuccess: () => void
+    initialCategory?: string
 }
 
-export default function DocumentUploadModal({ onClose, onSuccess }: DocumentUploadModalProps) {
+export default function DocumentUploadModal({ onClose, onSuccess, initialCategory }: DocumentUploadModalProps) {
     const { selectedId } = useProjectContext()
     const { data: projects } = useProjects()
     const { show } = useToast()
@@ -18,7 +19,7 @@ export default function DocumentUploadModal({ onClose, onSuccess }: DocumentUplo
 
     const [form, setForm] = useState({
         projectId: selectedId || '',
-        category: 'CONTRACT',
+        category: initialCategory || '계약서류',
         type: '',
         name: '',
         status: 'DRAFT',
@@ -26,6 +27,33 @@ export default function DocumentUploadModal({ onClose, onSuccess }: DocumentUplo
     })
     const [file, setFile] = useState<File | null>(null)
     const [isSubmitting, setIsSubmitting] = useState(false)
+
+    const [existingCategories, setExistingCategories] = useState<string[]>([
+        '계약서류', '설계도면', '안전관리', '품질관리', '준공서류', '현장사진', '반출증빙'
+    ])
+
+    // Fetch existing categories when projectId changes
+    useEffect(() => {
+        if (!form.projectId) return
+
+        async function fetchCategories() {
+            try {
+                // Fetch all docs for project to extract categories
+                // Optimization: In real world, use a dedicated endpoint like /api/documents/categories
+                const { data } = await apiClient.get(`/documents?projectId=${form.projectId}`)
+                if (Array.isArray(data)) {
+                    const cats = new Set<string>(['계약서류', '설계도면', '안전관리', '품질관리', '준공서류'])
+                    data.forEach((d: any) => {
+                        if (d.category) cats.add(d.category)
+                    })
+                    setExistingCategories(Array.from(cats).sort())
+                }
+            } catch (e) {
+                console.error('Failed to fetch categories', e)
+            }
+        }
+        fetchCategories()
+    }, [form.projectId])
 
     // Handle file selection (Do NOT auto-fill name)
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -71,8 +99,9 @@ export default function DocumentUploadModal({ onClose, onSuccess }: DocumentUplo
                 throw new Error(errData.details || errData.error || `Upload failed with status ${response.status}`)
             }
 
-            show('문서가 업로드되었습니다.', 'success')
+            // If new category was created, refresh
             onSuccess()
+            show('문서가 업로드되었습니다.', 'success')
             onClose()
         } catch (err: any) {
             console.error(err)
@@ -121,36 +150,38 @@ export default function DocumentUploadModal({ onClose, onSuccess }: DocumentUplo
 
                     <div className="grid two">
                         <label>
-                            <span>카테고리</span>
-                            <select
-                                value={form.category}
-                                onChange={e => setForm({ ...form, category: e.target.value })}
-                            >
-                                <option value="CONTRACT">계약</option>
-                                <option value="PROCESS">공정</option>
-                                <option value="SAFETY">안전</option>
-                                <option value="QUALITY">품질</option>
-                                <option value="EVIDENCE">증빙</option>
-                                <option value="SCRAP">반출</option>
-                                <option value="PHOTO">사진</option>
-                            </select>
+                            <span>프로젝트 산출물 (폴더명)</span>
+                            <div style={{ position: 'relative' }}>
+                                <input
+                                    list="category-options"
+                                    value={form.category}
+                                    onChange={e => setForm({ ...form, category: e.target.value })}
+                                    placeholder="폴더명을 입력하거나 선택하세요"
+                                    required
+                                />
+                                <datalist id="category-options">
+                                    {existingCategories.map(cat => (
+                                        <option key={cat} value={cat} />
+                                    ))}
+                                </datalist>
+                            </div>
                         </label>
                         <label>
                             <span>문서 종류 (Type)</span>
                             <input
                                 value={form.type}
                                 onChange={e => setForm({ ...form, type: e.target.value })}
-                                placeholder="예: 견적서, 도면"
+                                placeholder="예: 견적서, 도면, 보고서"
                             />
                         </label>
                     </div>
 
                     <label>
-                        <span>문서명 (Official Title) <span style={{ color: '#fa5252' }}>*</span></span>
+                        <span>문서명 (파일 엔티티) <span style={{ color: '#fa5252' }}>*</span></span>
                         <input
                             value={form.name}
                             onChange={e => setForm({ ...form, name: e.target.value })}
-                            placeholder="프로젝트 공식 문서명을 입력하세요"
+                            placeholder="문서명을 입력하세요 (예: 1차 설계도면)"
                             required
                         />
                     </label>

@@ -344,7 +344,7 @@ const createDocumentsRouter = (pool, uploadsDir) => {
 
   router.patch('/:id', async (req, res) => {
     const { id } = req.params
-    const { status, securityLevel } = req.body
+    const { status, securityLevel, name } = req.body
 
     const updates = []
     const params = [id]
@@ -356,6 +356,10 @@ const createDocumentsRouter = (pool, uploadsDir) => {
     if (securityLevel) {
       params.push(securityLevel)
       updates.push(`security_level = $${params.length}`)
+    }
+    if (name) {
+      params.push(name)
+      updates.push(`name = $${params.length}`)
     }
 
     if (updates.length === 0) return res.json({ message: 'No changes provided' })

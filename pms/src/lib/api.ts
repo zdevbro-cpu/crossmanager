@@ -3,7 +3,7 @@ import axios from 'axios'
 
 // API 서버 기본 URL (환경 변수 또는 기본값)
 // API 서버 기본 URL (환경 변수 또는 기본값)
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? '/api' : 'http://localhost:3005/api')
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? '/api' : 'http://localhost:3007/api')
 
 // Axios 인스턴스 생성
 export const apiClient = axios.create({
@@ -24,6 +24,25 @@ apiClient.interceptors.request.use(
     (error) => Promise.reject(error)
 )
 
+// buildFileUrl 함수 추가
+export const buildFileUrl = (path: string) => {
+    let base = apiClient.defaults.baseURL || '/api'
+
+    // Fix: If path is 'uploads/...', it should be served from root, not /api/uploads
+    // If base ends with '/api', strip it for upload paths
+    if ((path.startsWith('uploads/') || path.startsWith('/uploads/')) && base.endsWith('/api')) {
+        base = base.slice(0, -4) // remove /api
+    }
+
+    const baseAbsolute = base.startsWith('http')
+        ? base
+        : `${window.location.origin}${base.startsWith('/') ? '' : '/'}${base}`
+
+    const baseTrimmed = baseAbsolute.replace(/\/+$/, '')
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`
+    return `${baseTrimmed}${normalizedPath}`
+}
+
 // 응답 인터셉터 (예: 에러 처리)
 apiClient.interceptors.response.use(
     (response) => response,
@@ -32,3 +51,4 @@ apiClient.interceptors.response.use(
         return Promise.reject(error)
     }
 )
+

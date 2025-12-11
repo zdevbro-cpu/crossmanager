@@ -1,12 +1,14 @@
 import { useState, useEffect, useRef } from 'react'
-import { X, FileText, Upload, ExternalLink, RefreshCw, Plus, Trash2 } from 'lucide-react'
-import { apiClient, buildFileUrl } from '../lib/api'
+import { X, FileText, Upload, ExternalLink, RefreshCw, Plus, Trash2, Pencil, Check } from 'lucide-react'
+import { apiClient } from '../lib/api'
+import { openPrintWindow } from '../utils/printWindow'
 import { useToast } from './ToastProvider'
 
 interface DocumentDetailModalProps {
     documentId: string
     onClose: () => void
     onUpdate: () => void
+    initialTab?: 'info' | 'history'
 }
 
 const formatDateTime = (dateInput: any) => {
@@ -27,24 +29,11 @@ const formatDateTime = (dateInput: any) => {
     }).format(date)
 }
 
-const formatDate = (dateInput: any) => {
-    if (!dateInput) return '-'
-    let dateStr = dateInput
-    if (typeof dateStr === 'string' && !dateStr.includes('Z') && !dateStr.includes('+')) {
-        dateStr += 'Z'
-    }
-    const date = new Date(dateStr)
-    return new Intl.DateTimeFormat('ko-KR', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        timeZone: 'Asia/Seoul'
-    }).format(date)
-}
 
-export default function DocumentDetailModal({ documentId, onClose, onUpdate }: DocumentDetailModalProps) {
+
+export default function DocumentDetailModal({ documentId, onClose, onUpdate, initialTab = 'info' }: DocumentDetailModalProps) {
     const { show } = useToast()
-    const [activeTab, setActiveTab] = useState<'info' | 'history'>('info')
+    const [activeTab, setActiveTab] = useState<'info' | 'history'>(initialTab)
     const [data, setData] = useState<any>(null)
     const [loading, setLoading] = useState(true)
     const [updatingStatus, setUpdatingStatus] = useState(false)
@@ -55,6 +44,10 @@ export default function DocumentDetailModal({ documentId, onClose, onUpdate }: D
     const [newVersionString, setNewVersionString] = useState('')
     const fileInputRef = useRef<HTMLInputElement>(null)
 
+    // Rename State
+    const [isEditingName, setIsEditingName] = useState(false)
+    const [editName, setEditName] = useState('')
+
     useEffect(() => {
         fetchDetails()
     }, [documentId])
@@ -64,6 +57,7 @@ export default function DocumentDetailModal({ documentId, onClose, onUpdate }: D
             setLoading(true)
             const res = await apiClient.get(`/documents/${documentId}`)
             setData(res.data)
+            setEditName(res.data.name)
         } catch (err) {
             console.error(err)
             show('문서 정보를 불러오지 못했습니다.', 'error')
@@ -100,6 +94,24 @@ export default function DocumentDetailModal({ documentId, onClose, onUpdate }: D
         }
     }
 
+    const handleNameUpdate = async () => {
+        if (!editName.trim()) return
+        if (editName === data.name) {
+            setIsEditingName(false)
+            return
+        }
+
+        try {
+            await apiClient.patch(`/documents/${documentId}`, { name: editName })
+            show('문서명이 변경되었습니다.', 'success')
+            setIsEditingName(false)
+            fetchDetails()
+            onUpdate()
+        } catch (err) {
+            show('문서명 변경 실패', 'error')
+        }
+    }
+
     const handleDeleteVersion = async (versionId: string) => {
         if (data.status === 'APPROVED') {
             show('승인된 문서는 버전을 삭제할 수 없습니다.', 'error')
@@ -124,29 +136,35 @@ export default function DocumentDetailModal({ documentId, onClose, onUpdate }: D
         }
     }
 
-    // Consolidated File Open Handler (Prioritizes Signed URL)
-    const handlePrint = (fileUrl?: string) => {
-        // 1. If we have a signed URL and we are strictly viewing the current file (or no arg passed), use it.
-        // CHECK: If fileUrl is provided (e.g. history item), we only use signed URL if it matches current.
-        if (data.downloadUrl && (!fileUrl || fileUrl === data.file_path)) {
-            window.open(data.downloadUrl, '_blank')
+    // Consolidated File Open Handler
+    const handlePrint = (fileUrl?: string, versionId?: string) => {
+        let baseURL = apiClient.defaults.baseURL || '/api'
+        if (typeof baseURL === 'string' && !baseURL.startsWith('http')) {
+            baseURL = `${window.location.origin}${baseURL.startsWith('/') ? '' : '/'}${baseURL}`
+        }
+        if (typeof baseURL === 'string') {
+            baseURL = baseURL.replace(/\/$/, '')
+        }
+
+        const ext = fileUrl ? fileUrl.split('.').pop() : 'pdf'
+        const safeName = data.name.replace(/[^a-zA-Z0-9가-힣\s\-_.]/g, '').trim()
+
+        // CASE 1: Specific Version -> Use Version View Route
+        if (versionId) {
+            const finalName = `${safeName}_ver.${ext}`
+            const targetUrl = `${baseURL}/docview/versions/${versionId}/${encodeURIComponent(finalName)}`
+            if (!openPrintWindow(targetUrl, finalName)) {
+                show('브라우저에서 새 탭을 열 수 없어 인쇄창을 띄울 수 없습니다.', 'error')
+            }
             return
         }
 
-        // 2. Fallback for history items or if don't have signed URL
-        let targetUrl = ''
-        if (fileUrl && fileUrl.startsWith('http')) {
-            targetUrl = fileUrl
-        } else if (fileUrl) {
-            // This is likely a relative path (old uploads). 
-            // Warning: For Storage files without signed URL, this will 404.
-            targetUrl = buildFileUrl(fileUrl)
-        }
-
-        if (targetUrl) {
-            window.open(targetUrl, '_blank')
-        } else {
-            show('파일 경로가 올바르지 않습니다. (서명된 URL 만료 또는 파일 없음)', 'error')
+        // CASE 2: Current Document (Default) -> Use Document View Route
+        // This is used for the main "File View" / "Print" buttons
+        const finalName = `${safeName}.${ext}`
+        const targetUrl = `${baseURL}/docview/${documentId}/${encodeURIComponent(finalName)}`
+        if (!openPrintWindow(targetUrl, finalName)) {
+            show('브라우저에서 새 탭을 열 수 없어 인쇄창을 띄울 수 없습니다.', 'error')
         }
     }
 
@@ -211,11 +229,9 @@ export default function DocumentDetailModal({ documentId, onClose, onUpdate }: D
 
     const currentVersionObj = data.versions?.find((v: any) => v.version === data.current_version)
     const displayFilePath = currentVersionObj ? currentVersionObj.file_path : data.file_path
-    // Remove timestamp prefix 12345678-filename.pdf
-    const fileName = displayFilePath ? displayFilePath.split('/').pop()?.replace(/^\d+-/, '') : '파일 없음'
-    const fileExt = fileName !== '파일 없음' ? fileName.split('.').pop()?.toUpperCase() : '-'
+    // Remove timestamp/random prefix
+    const fileName = displayFilePath ? displayFilePath.split('/').pop()?.replace(/^(\d+-)+/, '') : '파일 없음'
     const displayFileSize = currentVersionObj ? currentVersionObj.file_size : data.file_size
-    const displayDate = currentVersionObj ? currentVersionObj.created_at : data.created_at
 
     return (
         <div className="modal-overlay" onClick={onClose}>
@@ -232,8 +248,59 @@ export default function DocumentDetailModal({ documentId, onClose, onUpdate }: D
                         }}>
                             <FileText size={24} />
                         </div>
-                        <div>
-                            <h3 style={{ margin: 0, fontSize: '1.25rem' }}>{fileName}</h3>
+                        <div style={{ flex: 1 }}>
+                            {isEditingName ? (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <input
+                                        type="text"
+                                        value={editName}
+                                        onChange={(e) => setEditName(e.target.value)}
+                                        style={{
+                                            background: '#333', border: '1px solid #555', color: 'white',
+                                            fontSize: '1.25rem', padding: '4px 8px', borderRadius: '4px', width: '100%'
+                                        }}
+                                        autoFocus
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') handleNameUpdate()
+                                            if (e.key === 'Escape') {
+                                                setEditName(data.name)
+                                                setIsEditingName(false)
+                                            }
+                                        }}
+                                    />
+                                    <button
+                                        className="icon-button"
+                                        onClick={handleNameUpdate}
+                                        title="저장"
+                                        style={{ color: '#4c6ef5' }}
+                                    >
+                                        <Check size={20} />
+                                    </button>
+                                    <button
+                                        className="icon-button"
+                                        onClick={() => {
+                                            setEditName(data.name)
+                                            setIsEditingName(false)
+                                        }}
+                                        title="취소"
+                                        style={{ color: '#fa5252' }}
+                                    >
+                                        <X size={20} />
+                                    </button>
+                                </div>
+                            ) : (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <h3 style={{ margin: 0, fontSize: '1.25rem' }}>{data.name}</h3>
+                                    <button
+                                        className="icon-button"
+                                        onClick={() => setIsEditingName(true)}
+                                        title="문서명 변경"
+                                        style={{ opacity: 0.5, padding: '4px' }}
+                                    >
+                                        <Pencil size={16} />
+                                    </button>
+                                </div>
+                            )}
                             <p className="muted" style={{ margin: 0, fontSize: '0.9rem' }}>
                                 Ver. {data.current_version}
                             </p>
@@ -261,108 +328,84 @@ export default function DocumentDetailModal({ documentId, onClose, onUpdate }: D
 
                 <div className="modal-body" style={{ minHeight: '300px' }}>
                     {activeTab === 'info' && (
-                        <div className="grid two">
-                            <div>
-                                <h4 className="section-title" style={{ color: '#e8ecf7', marginBottom: '1rem' }}>메타데이터</h4>
-                                <div className="detail-row" style={{ marginBottom: '0.8rem' }}>
-                                    <span className="muted" style={{ width: '100px', display: 'inline-block' }}>카테고리</span>
-                                    <span className="badge">{data.category}</span>
-                                </div>
-                                <div className="detail-row" style={{ marginBottom: '0.8rem' }}>
-                                    <span className="muted" style={{ width: '100px', display: 'inline-block' }}>문서 종류</span>
-                                    <span>{data.type}</span>
-                                </div>
-                                <div className="detail-row" style={{ marginBottom: '0.8rem' }}>
-                                    <span className="muted" style={{ width: '100px', display: 'inline-block' }}>상태</span>
-                                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-                                        <span className={`badge ${data.status === 'APPROVED' ? 'badge-live' : 'badge-neutral'}`}>
-                                            {data.status}
-                                        </span>
-                                        <select
-                                            value={data.status}
-                                            onChange={(e) => handleStatusChange(e.target.value)}
-                                            disabled={updatingStatus || data.status === 'APPROVED'}
-                                            style={{
-                                                padding: '2px 8px', borderRadius: '4px',
-                                                background: data.status === 'APPROVED' ? '#222' : '#333',
-                                                color: data.status === 'APPROVED' ? '#888' : 'white',
-                                                border: '1px solid #555',
-                                                fontSize: '0.8rem',
-                                                cursor: data.status === 'APPROVED' ? 'not-allowed' : 'pointer'
-                                            }}
-                                        >
-                                            <option value="DRAFT">DRAFT</option>
-                                            <option value="PENDING">PENDING</option>
-                                            <option value="APPROVED">APPROVED</option>
-                                            <option value="REJECTED">REJECTED</option>
-                                        </select>
-                                    </div>
-                                </div>
-                                <div className="detail-row" style={{ marginBottom: '0.8rem' }}>
-                                    <span className="muted" style={{ width: '100px', display: 'inline-block' }}>보안 등급</span>
-                                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-                                        <span className={`badge ${data.security_level === 'SECRET' ? 'badge-danger' : 'badge-neutral'}`}>
-                                            {data.security_level}
-                                        </span>
-                                        <select
-                                            value={data.security_level}
-                                            onChange={(e) => handleSecurityChange(e.target.value)}
-                                            style={{
-                                                padding: '2px 8px', borderRadius: '4px',
-                                                background: '#333',
-                                                color: 'white',
-                                                border: '1px solid #555',
-                                                fontSize: '0.8rem',
-                                                cursor: 'pointer'
-                                            }}
-                                        >
-                                            <option value="NORMAL">NORMAL</option>
-                                            <option value="CONFIDENTIAL">CONFIDENTIAL</option>
-                                            <option value="SECRET">SECRET</option>
-                                        </select>
-                                    </div>
-                                </div>
-                                <div className="detail-row" style={{ marginBottom: '0.8rem' }}>
-                                    <span className="muted" style={{ width: '100px', display: 'inline-block' }}>생성일</span>
-                                    <span>{new Date(data.created_at).toLocaleDateString()}</span>
+                        <div>
+                            <h4 className="section-title" style={{ color: '#e8ecf7', marginBottom: '1rem' }}>메타데이터</h4>
+
+                            <div className="detail-row" style={{ marginBottom: '0.8rem' }}>
+                                <span className="muted" style={{ width: '100px', display: 'inline-block' }}>첨부 파일</span>
+                                <span
+                                    style={{ color: '#74c0fc', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                                    onClick={() => handlePrint()}
+                                >
+                                    <FileText size={16} />
+                                    <span style={{ textDecoration: 'underline', textUnderlineOffset: '4px' }}>{fileName}</span>
+                                    <span className="muted" style={{ fontSize: '0.9rem', textDecoration: 'none' }}>
+                                        ({displayFileSize ? (displayFileSize / 1024 / 1024).toFixed(2) + ' MB' : '0 MB'})
+                                    </span>
+                                </span>
+                            </div>
+
+                            <div className="detail-row" style={{ marginBottom: '0.8rem' }}>
+                                <span className="muted" style={{ width: '100px', display: 'inline-block' }}>카테고리</span>
+                                <span className="badge">{data.category}</span>
+                            </div>
+                            <div className="detail-row" style={{ marginBottom: '0.8rem' }}>
+                                <span className="muted" style={{ width: '100px', display: 'inline-block' }}>문서 종류</span>
+                                <span>{data.type}</span>
+                            </div>
+                            <div className="detail-row" style={{ marginBottom: '0.8rem' }}>
+                                <span className="muted" style={{ width: '100px', display: 'inline-block' }}>상태</span>
+                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                                    <span className={`badge ${data.status === 'APPROVED' ? 'badge-live' : 'badge-neutral'}`}>
+                                        {data.status}
+                                    </span>
+                                    <select
+                                        value={data.status}
+                                        onChange={(e) => handleStatusChange(e.target.value)}
+                                        disabled={updatingStatus || data.status === 'APPROVED'}
+                                        style={{
+                                            padding: '2px 8px', borderRadius: '4px',
+                                            background: data.status === 'APPROVED' ? '#222' : '#333',
+                                            color: data.status === 'APPROVED' ? '#888' : 'white',
+                                            border: '1px solid #555',
+                                            fontSize: '0.8rem',
+                                            cursor: data.status === 'APPROVED' ? 'not-allowed' : 'pointer'
+                                        }}
+                                    >
+                                        <option value="DRAFT">DRAFT</option>
+                                        <option value="PENDING">PENDING</option>
+                                        <option value="APPROVED">APPROVED</option>
+                                        <option value="REJECTED">REJECTED</option>
+                                    </select>
                                 </div>
                             </div>
-                            <div>
-                                <h4 className="section-title" style={{ color: '#e8ecf7', marginBottom: '1rem' }}>파일 정보</h4>
-                                <div className="file-preview-placeholder" style={{
-                                    background: 'rgba(0,0,0,0.2)',
-                                    borderRadius: '8px',
-                                    padding: '2rem',
-                                    textAlign: 'center',
-                                    border: '1px dashed rgba(255,255,255,0.1)'
-                                }}>
-                                    <FileText size={48} className="muted" style={{ marginBottom: '1rem', opacity: 0.3 }} />
-
-                                    {/* Use handlePrint for viewing file */}
-                                    <div
-                                        onClick={() => handlePrint()}
-                                        style={{ margin: '0 0 0.5rem 0', fontWeight: 500, cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: '4px', color: '#8bd3ff' }}
+                            <div className="detail-row" style={{ marginBottom: '0.8rem' }}>
+                                <span className="muted" style={{ width: '100px', display: 'inline-block' }}>보안 등급</span>
+                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                                    <span className={`badge ${data.security_level === 'SECRET' ? 'badge-danger' : 'badge-neutral'}`}>
+                                        {data.security_level}
+                                    </span>
+                                    <select
+                                        value={data.security_level}
+                                        onChange={(e) => handleSecurityChange(e.target.value)}
+                                        style={{
+                                            padding: '2px 8px', borderRadius: '4px',
+                                            background: '#333',
+                                            color: 'white',
+                                            border: '1px solid #555',
+                                            fontSize: '0.8rem',
+                                            cursor: 'pointer'
+                                        }}
                                     >
-                                        {fileName}
-                                    </div>
-
-                                    <p className="muted" style={{ fontSize: '0.9rem', marginBottom: '0.5rem' }}>
-                                        {displayFileSize ? (displayFileSize / 1024 / 1024).toFixed(2) + ' MB' : '0 MB'} • {fileExt}
-                                    </p>
-                                    <p className="muted" style={{ fontSize: '0.8rem', marginBottom: '1.5rem' }}>
-                                        업로드: {formatDate(displayDate)}
-                                    </p>
-
-                                    <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
-                                        <button
-                                            onClick={() => handlePrint()}
-                                            className="btn btn-primary"
-                                            style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', border: 'none', cursor: 'pointer' }}
-                                        >
-                                            <ExternalLink size={16} style={{ marginRight: '6px' }} /> 파일 보기
-                                        </button>
-                                    </div>
+                                        <option value="NORMAL">NORMAL</option>
+                                        <option value="CONFIDENTIAL">CONFIDENTIAL</option>
+                                        <option value="SECRET">SECRET</option>
+                                    </select>
                                 </div>
+                            </div>
+                            <div className="detail-row" style={{ marginBottom: '0.8rem' }}>
+                                <span className="muted" style={{ width: '100px', display: 'inline-block' }}>생성일</span>
+                                <span>{new Date(data.created_at).toLocaleDateString()}</span>
                             </div>
                         </div>
                     )}
@@ -510,7 +553,7 @@ export default function DocumentDetailModal({ documentId, onClose, onUpdate }: D
                                             <button
                                                 className="icon-button"
                                                 title="파일 보기"
-                                                onClick={() => handlePrint(ver.file_path)}
+                                                onClick={() => handlePrint(ver.file_path, ver.id)}
                                                 style={{ color: '#8bd3ff' }}
                                             >
                                                 <ExternalLink size={16} />

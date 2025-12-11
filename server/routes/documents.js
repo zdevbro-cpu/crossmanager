@@ -47,6 +47,120 @@ router.use((req, res, next) => {
     next()
 })
 
+// ------------------------------------------
+// View Routes (Must be before /:id to ensure precedence if ambiguity exists)
+// ------------------------------------------
+
+// 4.5 View Document File (Inline with Clean Name) - Current Version
+router.get('/:id/view', async (req, res) => {
+    try {
+        const { id } = req.params
+        console.log(`[View] Request for doc id: ${id}`)
+
+        // Robust Query: Get the latest version's file info
+        const query = `
+            SELECT v.file_path, d.name
+            FROM documents d
+            JOIN document_versions v ON d.id = v.document_id
+            WHERE d.id = $1
+            ORDER BY 
+                CASE WHEN d.current_version = v.version THEN 1 ELSE 2 END,
+                v.created_at DESC
+            LIMIT 1
+        `
+        const resDb = await pool.query(query, [id])
+
+        if (resDb.rows.length === 0) {
+            console.log(`[View] Document not found or no versions: ${id}`)
+            return res.status(404).send('Document not found')
+        }
+
+        const filePath = resDb.rows[0].file_path
+        const docName = resDb.rows[0].name || 'Document'
+
+        if (!filePath) {
+            console.log(`[View] File path missing for doc: ${id}`)
+            return res.status(404).send('File path missing')
+        }
+
+        const fullPath = path.join(__dirname, '../', filePath)
+        console.log(`[View] Serving file: ${fullPath}`)
+
+        if (fs.existsSync(fullPath)) {
+            const ext = path.extname(fullPath).toLowerCase()
+            let safeName = docName.replace(/[^a-zA-Z0-9가-힣\s\-_.]/g, '').trim()
+            if (!safeName) safeName = 'document'
+
+            const downloadFilename = `${safeName}${ext}`
+            const encodedName = encodeURIComponent(downloadFilename)
+
+            let mimeType = 'application/octet-stream'
+            if (ext === '.pdf') mimeType = 'application/pdf'
+            else if (ext === '.png') mimeType = 'image/png'
+            else if (ext === '.jpg' || ext === '.jpeg') mimeType = 'image/jpeg'
+
+            res.setHeader('Content-Type', mimeType)
+            res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodedName}`)
+            res.sendFile(fullPath)
+        } else {
+            console.error(`[View] File missing on disk: ${fullPath}`)
+            res.status(404).send('File not found on server disk')
+        }
+    } catch (err) {
+        console.error('[View] Error:', err)
+        res.status(500).send('Server Error')
+    }
+})
+
+// 4.6 View Document Version File (Inline with Clean Name)
+router.get('/versions/:versionId/view', async (req, res) => {
+    try {
+        const { versionId } = req.params
+        console.log(`[View Version] Request for version id: ${versionId}`)
+
+        const query = `
+            SELECT v.file_path, d.name, v.version
+            FROM document_versions v
+            JOIN documents d ON v.document_id = d.id
+            WHERE v.id = $1
+        `
+        const resDb = await pool.query(query, [versionId])
+
+        if (resDb.rows.length === 0) return res.status(404).send('Version not found')
+
+        const filePath = resDb.rows[0].file_path
+        const docName = resDb.rows[0].name || 'Document'
+        const version = resDb.rows[0].version
+
+        if (!filePath) return res.status(404).send('File path missing')
+
+        const fullPath = path.join(__dirname, '../', filePath)
+
+        if (fs.existsSync(fullPath)) {
+            const ext = path.extname(fullPath).toLowerCase()
+            let safeName = docName.replace(/[^a-zA-Z0-9가-힣\s\-_.]/g, '').trim()
+            if (!safeName) safeName = 'document'
+
+            const downloadFilename = `${safeName}_${version}${ext}`
+            const encodedName = encodeURIComponent(downloadFilename)
+
+            let mimeType = 'application/octet-stream'
+            if (ext === '.pdf') mimeType = 'application/pdf'
+            else if (ext === '.png') mimeType = 'image/png'
+            else if (ext === '.jpg' || ext === '.jpeg') mimeType = 'image/jpeg'
+
+            res.setHeader('Content-Type', mimeType)
+            res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodedName}`)
+            res.sendFile(fullPath)
+        } else {
+            res.status(404).send('File not found on server disk')
+        }
+    } catch (err) {
+        console.error('[View Version] Error:', err)
+        res.status(500).send('Server Error')
+    }
+})
+
 // 1. Get All Documents (Filter by projectId, category)
 router.get('/', async (req, res) => {
     console.log('GET /api/documents hit')
@@ -214,8 +328,15 @@ router.get('/:id', async (req, res) => {
     try {
         const { id } = req.params
 
-        // 1. Get Master Data
-        const docRes = await pool.query('SELECT * FROM documents WHERE id = $1', [id])
+        // 1. Get Master Data + Join with Current Version Info
+        const query = `
+            SELECT d.*, v.file_path, v.file_size
+            FROM documents d
+            LEFT JOIN document_versions v ON d.id = v.document_id AND d.current_version = v.version
+            WHERE d.id = $1
+        `
+        const docRes = await pool.query(query, [id])
+
         if (docRes.rows.length === 0) {
             return res.status(404).json({ error: 'Document not found' })
         }
@@ -238,16 +359,37 @@ router.get('/:id', async (req, res) => {
     }
 })
 
-// 5. Update Status
-router.patch('/:id/status', async (req, res) => {
+// 5. Update Status / Security Level / Name
+router.patch('/:id', async (req, res) => {
     try {
         const { id } = req.params
-        const { status } = req.body
-        await pool.query('UPDATE documents SET status = $1 WHERE id = $2', [status, id])
-        res.json({ message: 'Status updated' })
+        const { status, securityLevel, name } = req.body
+
+        const updates = []
+        const params = [id]
+
+        if (status) {
+            updates.push(`status = $${params.length + 1}`)
+            params.push(status)
+        }
+        if (securityLevel) {
+            updates.push(`security_level = $${params.length + 1}`)
+            params.push(securityLevel)
+        }
+        if (name) {
+            updates.push(`name = $${params.length + 1}`)
+            params.push(name)
+        }
+
+        if (updates.length > 0) {
+            await pool.query(`UPDATE documents SET ${updates.join(', ')} WHERE id = $1`, params)
+            res.json({ message: 'Document updated successfully' })
+        } else {
+            res.json({ message: 'No changes provided' })
+        }
     } catch (err) {
         console.error(err)
-        res.status(500).json({ error: 'Failed to update status' })
+        res.status(500).json({ error: 'Failed to update document' })
     }
 })
 
@@ -320,6 +462,97 @@ router.delete('/:id/versions/:versionId', async (req, res) => {
         res.status(500).json({ error: 'Failed to delete version' })
     } finally {
         client.release()
+    }
+})
+
+// 8. Create Empty Folder (Placeholder Document)
+router.post('/folder', async (req, res) => {
+    const client = await pool.connect()
+    try {
+        await client.query('BEGIN')
+        const { projectId, category } = req.body
+
+        if (!projectId || !category) {
+            return res.status(400).json({ error: 'Project ID and Category Name required' })
+        }
+
+        // Check if category already exists (optional, but good for cleanliness)
+        // Actually, we just want to ensure at least one doc exists.
+        // If we create a placeholder, it might show up as a file if we don't filter it out in UI.
+        // We will mark it as type='FOLDER' and status='SYSTEM'.
+
+        const query = `
+            INSERT INTO documents (
+                project_id, category, type, name, status, 
+                current_version, security_level
+            ) VALUES ($1, $2, 'FOLDER', $2, 'SYSTEM', '-', 'NORMAL')
+            RETURNING id
+        `
+        const { rows } = await client.query(query, [projectId, category])
+
+        await client.query('COMMIT')
+        res.status(201).json({ message: 'Folder created', id: rows[0].id })
+
+    } catch (err) {
+        await client.query('ROLLBACK')
+        console.error(err)
+        res.status(500).json({ error: 'Failed to create folder' })
+    } finally {
+        client.release()
+    }
+})
+
+// 9. Rename Category
+router.patch('/category', async (req, res) => {
+    try {
+        const { projectId, oldCategory, newCategory } = req.body
+
+        if (!projectId || !oldCategory || !newCategory) {
+            return res.status(400).json({ error: 'Missing required fields' })
+        }
+
+        const query = `
+            UPDATE documents 
+            SET category = $1 
+            WHERE project_id = $2 AND category = $3
+        `
+        await pool.query(query, [newCategory, projectId, oldCategory])
+
+        // Also update the placeholder document name if it exists
+        await pool.query(`
+            UPDATE documents
+            SET name = $1
+            WHERE project_id = $2 AND category = $1 AND type = 'FOLDER'
+        `, [newCategory, projectId])
+
+        res.json({ message: 'Category renamed' })
+    } catch (err) {
+        console.error(err)
+        res.status(500).json({ error: 'Failed to rename category' })
+    }
+})
+
+// 10. Delete Category
+router.delete('/category', async (req, res) => {
+    try {
+        const { projectId, category } = req.query
+
+        if (!projectId || !category) {
+            return res.status(400).json({ error: 'Missing required fields' })
+        }
+
+        // Delete all documents in this category
+        // Note: Files on disk will remain (MVP limitation as per deletion route)
+        const query = `
+            DELETE FROM documents 
+            WHERE project_id = $1 AND category = $2
+        `
+        await pool.query(query, [projectId, category])
+
+        res.json({ message: 'Category deleted' })
+    } catch (err) {
+        console.error(err)
+        res.status(500).json({ error: 'Failed to delete category' })
     }
 })
 
