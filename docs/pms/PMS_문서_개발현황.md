@@ -1,0 +1,79 @@
+# PMS 문서 개발현황 (1차 완료, 상세)
+
+## 1. 요구사항 정의
+- 목적/범위: 프로젝트별 문서 업로드, 버전 관리, 인쇄/삭제, 메타데이터 관리.
+- 필수 입력: 프로젝트, 카테고리/타입, 문서명, 보안등급, 상태, 파일, 버전.
+- 비즈 규칙:
+  - 파일 최대 50MB, 한글 파일명 인코딩 보정.
+  - 상태: DRAFT/PENDING/APPROVED/REJECTED, 승인된 문서는 삭제 제한.
+  - 현재버전은 `documents.current_version`와 `document_versions` 동기화.
+  - 보안등급 NORMAL/CONFIDENTIAL/SECRET, 접근 제어는 미구현(과제).
+- 고객 규정: 삼성/LG 등 PDF 제출·버전 관리 요구 대응(전자결재/서명 미구현).
+
+## 2. 설계 개요
+- 테이블:
+  - `documents`: 메타, 카테고리(CONTRACT/PROCESS/SAFETY/QUALITY/EVIDENCE/PHOTO/...), 타입, 보안등급, 현재버전, 메타데이터(JSONB).
+  - `document_versions`: 버전, 파일경로, 파일크기, 해시, 변경로그, created_at.
+  - `document_approvals`, `document_shares`: 승인/공유 토큰은 차기 단계.
+- 파일 정책: 한글 파일명 인코딩 보정(latin1→utf8), 업로드 50MB 제한, PDF/이미지 인쇄 허용.
+
+## 3. 백엔드 구현 (`server/routes/documents.js` -> Cloud Functions `functions/routes/documents.js`)
+- **기술 스택 변경:** `Multer` -> `Busboy` (Cloud Functions/Run 호환성 및 Body Parser 충돌 해결).
+- **저장소 전략:**
+  - **기존:** 로컬 디스크 (`uploads/`) -> **변경:** [Firebase Cloud Storage](https://firebase.google.com/docs/storage) (`documents/{projectId}/{filename}`).
+  - **임시 처리:** 업로드 중에는 `/tmp` (RAM Disk)를 버퍼로 사용 후 즉시 Storage로 전송 및 삭제.
+- **다운로드/조회:**
+  - DB에는 `gs://...` 또는 상대 경로 저장.
+  - 조회 API(`GET /:id`) 호출 시 **Signed URL** (1시간 유효) 생성하여 반환.
+- **API 변경:**
+  - `POST /upload`: Busboy 스트림 처리 -> Storage 업로드 -> DB 메타데이터 저장.
+  - `POST /:id/versions`: 동일 로직으로 버전 파일 처리.
+- **환경 설정:**
+  - CORS: `app.use(cors({ origin: true }))` 적용.
+  - Storage Bucket: `crossmanager-1e21c.appspot.com` (환경변수 또는 하드코딩).
+
+## 4. 프런트 구현 (`pms/src/pages/Documents.tsx`)
+- **업로드 로직 변경:**
+  - `Axios` -> **Native `fetch` API** (Axios의 `Content-Type: application/json` 기본값 간섭으로 인한 백엔드 파싱 에러 해결).
+  - `FormData` 전송 시 브라우저가 자동으로 `boundary`를 포함한 `multipart/form-data` 헤더를 생성하도록 유도.
+- **다운로드/미리보기:** 백엔드에서 받은 `downloadUrl` (Signed URL)을 통해 직접 접근.
+- 리스트: 프로젝트/카테고리별 필터, 버전/상태 뱃지.
+- 인쇄: PDF/이미지 Blob → iframe print.
+
+## 5. 적용 규정/필드 예시
+- (기존 동일)
+
+## 6. 테스트/검증 포인트 & 해결 이력
+- **[해결] 500 Internal Server Error (Upload):**
+  - 원인: 클라이언트가 JSON 헤더를 보내고 백엔드는 Multipart를 기대함.
+  - 조치: 프론트엔드 `fetch` 전환, 백엔드 `Busboy` 도입.
+- **[해결] Storage Bucket Not Found:**
+  - 원인: Admin SDK 초기화 시 버킷명 미지정.
+  - 조치: 명시적 버킷명(`crossmanager-1e21c.appspot.com`) 설정.
+- **데이터 보존:** DB 데이터는 영구 보존되나, 기존 `/uploads` 폴더(휘발성)에 있던 파일은 삭제됨 (재업로드 필요).
+
+## 7. 남은 과제
+- **Contracts(계약/견적) 모듈 마이그레이션:**
+  - 현재: DB `JSONB` 컬럼에 파일 내용(Base64 등) 직접 저장.
+  - 계획: Documents와 동일하게 **Storage + Signed URL** 방식으로 통일하여 DB 용량 절감 및 성능 확보 필요.
+- 승인선/서명(`document_approvals`), 외부 공유 토큰(`document_shares`) 구현.
+- 보고서 자동 생성(PDF/XLSX), 파일 해시로 중복 차단.
+
+### 2023-11-XX (문서 관리 고도화)
+- **프론트엔드 (UI/UX)**
+  - **문서 업로드:** "문서명(공식)"과 "파일명(물리)" 구분 입력 UI 완성.
+  - **문서 상세:** 수동 버전 입력 필드(예: v1.1) 추가, 상태 변경(Select) UI 복구.
+  - **파일 접근:** Signed URL 사용 전면화로 `Cannot GET` 및 404 에러 해결.
+  - **목록 화면:** "문서명" 헤더를 "**프로젝트 산출물**"로 변경, 인쇄(다운로드) 버튼 클릭 시 최신 Signed URL을 받아오도록 로직 개선.
+
+- **백엔드 (Firebase Functions)**
+  - **버전 API:** `POST /versions`에서 사용자 정의 `version` 파라미터 수신 (미제공 시 자동 증가).
+  - **Storage:** 파일 업로드 및 Signed URL 생성 로직 안정화.
+
+### 2023-11-XX (문서 관리 고도화 2단계)
+- **프론트엔드 (UI/UX)**
+  - **문서 상세 모달:** 파일명 표시 시 타임스탬프 제거, 보안 등급 수정 기능 추가.
+  - **목록 화면:** 프로젝트 컬럼 삭제 후 산출물명 하단 병기, 컬럼 순서 재배치.
+  
+- **백엔드 (Firebase Functions)**
+  - **문서 수정 API:** `PATCH /documents/:id` 구현 (Status, Security Level 통합 수정).

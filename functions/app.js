@@ -5,14 +5,17 @@ const cors = require('cors')
 const multer = require('multer')
 const path = require('path')
 const fs = require('fs')
+const os = require('os')
 require('dotenv').config()
 const { Pool } = require('pg')
+const { createDocumentsRouter } = require('./routes/documents')
 
 const app = express()
+app.use(cors({ origin: true }))
 const PORT = process.env.PORT || 3000
 
-// Ensure uploads directory exists
-const uploadsDir = path.join(__dirname, 'uploads')
+// Ensure uploads directory exists (use /tmp on Cloud Run/Functions which is writable)
+const uploadsDir = process.env.UPLOAD_DIR || path.join(os.tmpdir(), 'uploads')
 if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true })
 }
@@ -33,12 +36,6 @@ const upload = multer({
     storage: storage,
     limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
 })
-
-app.use(cors())
-app.use(express.json({ limit: '50mb' }))
-app.use(express.urlencoded({ extended: true, limit: '50mb' }))
-// Serve uploaded files statically
-app.use('/uploads', express.static(uploadsDir))
 
 // Utility helpers
 const todayStr = () => new Date().toISOString().split('T')[0]
@@ -92,17 +89,34 @@ const dbConfig = {
     password: process.env.DB_PASSWORD,
 }
 
-if (process.env.INSTANCE_CONNECTION_NAME) {
-    // Production: Use Cloud SQL Socket
-    dbConfig.host = `/cloudsql/${process.env.INSTANCE_CONNECTION_NAME}`
-} else {
-    // Local: Use TCP
+// Connection preference:
+// 1) Cloud SQL Unix socket if INSTANCE_CONNECTION_NAME 제공 (서버리스 VPC 없이 접근 가능)
+// 2) TCP(DB_HOST) 필요시 사용. FORCE_TCP=true 설정 시 소켓 대신 TCP 강제.
+// Force Cloud SQL Unix Socket connection (User confirmed this worked previously)
+// Instance Connection Name MUST match the source project (480401), not the deploy project (1e21c)
+if (true) {
+    dbConfig.host = '/cloudsql/crossmanager-480401:asia-northeast3:crossmanager'
+} else if (process.env.DB_HOST) {
     dbConfig.host = process.env.DB_HOST
     dbConfig.port = process.env.DB_PORT || 5432
+    dbConfig.ssl = { rejectUnauthorized: false }
+} else {
+    dbConfig.host = 'localhost'
+    dbConfig.port = 5432
     dbConfig.ssl = { rejectUnauthorized: false }
 }
 
 const pool = new Pool(dbConfig)
+
+// Documents Router MUST be mounted BEFORE body parsers (json/urlencoded)
+// so that Multer can handle multipart/form-data streams first.
+const documentsRouter = createDocumentsRouter(pool, uploadsDir)
+app.use('/api/documents', documentsRouter)
+
+app.use(express.json({ limit: '50mb' }))
+app.use(express.urlencoded({ extended: true, limit: '50mb' }))
+// Serve uploaded files statically
+app.use('/uploads', express.static(uploadsDir))
 
 pool.connect((err) => {
     if (err) {
@@ -238,6 +252,48 @@ pool.connect((err) => {
                             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                         )
                     `)
+
+                // 3-1. Init PMS Documents tables (safe, no drop)
+                await pool.query(`
+                        CREATE TABLE IF NOT EXISTS documents (
+                            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                            project_id UUID,
+                            category VARCHAR(50),
+                            type VARCHAR(100),
+                            name VARCHAR(255) NOT NULL,
+                            status VARCHAR(20) DEFAULT 'DRAFT',
+                            current_version VARCHAR(20) DEFAULT 'v1',
+                            security_level VARCHAR(20) DEFAULT 'NORMAL',
+                            metadata JSONB,
+                            review_status VARCHAR(20),
+                            created_by UUID,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    `)
+
+                await pool.query(`
+                        CREATE TABLE IF NOT EXISTS document_versions (
+                            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                            document_id UUID REFERENCES documents(id) ON DELETE CASCADE,
+                            version VARCHAR(20) NOT NULL,
+                            file_path TEXT NOT NULL,
+                            file_size BIGINT,
+                            file_hash VARCHAR(255),
+                            change_log TEXT,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    `)
+
+                // Ensure extensions/columns exist for documents schema (safe idempotent)
+                await pool.query(`CREATE EXTENSION IF NOT EXISTS "pgcrypto"`)
+                await pool.query(`ALTER TABLE documents ADD COLUMN IF NOT EXISTS review_status VARCHAR(20)`)
+                await pool.query(`ALTER TABLE documents ADD COLUMN IF NOT EXISTS metadata JSONB`)
+                await pool.query(`ALTER TABLE documents ADD COLUMN IF NOT EXISTS security_level VARCHAR(20) DEFAULT 'NORMAL'`)
+                await pool.query(`ALTER TABLE documents ADD COLUMN IF NOT EXISTS current_version VARCHAR(20) DEFAULT 'v1'`)
+                await pool.query(`ALTER TABLE document_versions ADD COLUMN IF NOT EXISTS file_size BIGINT`)
+                await pool.query(`ALTER TABLE document_versions ADD COLUMN IF NOT EXISTS file_hash VARCHAR(255)`)
+                await pool.query(`ALTER TABLE document_versions ADD COLUMN IF NOT EXISTS change_log TEXT`)
 
                 // 4. Init EMS Equipment Table
                 await pool.query(`
@@ -2246,6 +2302,3 @@ if (require.main === module) {
 }
 
 module.exports = app
-
-
-

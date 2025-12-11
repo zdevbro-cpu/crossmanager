@@ -1,23 +1,17 @@
 import './Page.css'
 import { useState } from 'react'
 import { useDocuments } from '../hooks/useDocuments'
-import { useProjects } from '../hooks/useProjects'
 import { useProjectContext } from '../context/ProjectContext'
 import { useToast } from '../components/ToastProvider'
-import { Trash2, Plus, Printer, FileText, Eye, Download } from 'lucide-react'
+import { Trash2, Plus, Printer, FileText, Eye } from 'lucide-react'
 import DocumentUploadModal from '../components/DocumentUploadModal'
 import DocumentDetailModal from '../components/DocumentDetailModal'
-
-const getDownloadUrl = (path?: string) => {
-  if (!path) return '#'
-  return `http://localhost:3005/${path}`
-}
+import { buildFileUrl, apiClient } from '../lib/api'
 
 function DocumentsPage() {
   const { selectedId } = useProjectContext()
   const { show } = useToast()
   const { data: docs, isLoading, isError, deleteDocument, refresh } = useDocuments(selectedId || undefined)
-  const { data: projects } = useProjects()
 
   const [isUploadOpen, setIsUploadOpen] = useState(false)
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null)
@@ -33,36 +27,46 @@ function DocumentsPage() {
     }
   }
 
-  const handlePrint = async (path: string) => {
-    if (!path) return
-    const url = `http://localhost:3005/${path}`
+  const handlePrint = async (docId: string) => {
+    if (!docId) return
 
     try {
-      show('인쇄 준비 중...', 'info')
-      const response = await fetch(url)
-      const blob = await response.blob()
+      show('파일을 불러오는 중...', 'info')
+      const res = await apiClient.get(`/documents/${docId}`)
+      const doc = res.data
 
-      // Allow PDF and Images
-      if (!blob.type.includes('pdf') && !blob.type.includes('image')) {
-        // For other files, just download/open? Or alert?
-        // User requested "System Print Dialog".
-        alert('인쇄는 PDF 또는 이미지 파일만 지원합니다.')
+      const url = doc.downloadUrl || (doc.file_path ? buildFileUrl(doc.file_path) : '')
+
+      if (!url) {
+        show('파일 경로를 찾을 수 없습니다.', 'error')
         return
       }
 
-      const blobUrl = URL.createObjectURL(blob)
-      const iframe = document.createElement('iframe')
-      iframe.style.display = 'none'
-      iframe.src = blobUrl
-      document.body.appendChild(iframe)
+      // Try to fetch blob for system print dialog
+      try {
+        const fileRes = await fetch(url)
+        if (!fileRes.ok) throw new Error('CORS or Network Error')
+        const blob = await fileRes.blob()
+        const blobUrl = URL.createObjectURL(blob)
 
-      iframe.onload = () => {
-        iframe.contentWindow?.print()
-        setTimeout(() => {
-          document.body.removeChild(iframe)
-          URL.revokeObjectURL(blobUrl)
-        }, 5000) // Extended timeout to ensure print dialog doesn't break if removed too soon
+        const iframe = document.createElement('iframe')
+        iframe.style.display = 'none'
+        iframe.src = blobUrl
+        document.body.appendChild(iframe)
+
+        iframe.onload = () => {
+          iframe.contentWindow?.print()
+          setTimeout(() => {
+            document.body.removeChild(iframe)
+            URL.revokeObjectURL(blobUrl)
+          }, 5000)
+        }
+      } catch (innerErr) {
+        // Fallback to new tab if fetch fails (likely CORS)
+        console.warn('Print fetch failed, falling back to new tab', innerErr)
+        window.open(url, '_blank')
       }
+
     } catch (e) {
       console.error(e)
       show('파일을 불러오는데 실패했습니다.', 'error')
@@ -93,10 +97,9 @@ function DocumentsPage() {
         {isError && <p className="muted p-4">오류가 발생했습니다.</p>}
 
         <div className="table">
-          <div className="table-row table-header" style={{ gridTemplateColumns: 'minmax(150px, 1.2fr) 90px minmax(200px, 3fr) 80px 110px 100px 120px', gap: '8px' }}>
-            <span>프로젝트</span>
+          <div className="table-row table-header" style={{ gridTemplateColumns: 'minmax(250px, 3fr) 100px 80px 110px 100px 120px', gap: '8px' }}>
+            <span>프로젝트 산출물</span>
             <span>구분</span>
-            <span>문서명</span>
             <span style={{ textAlign: 'center' }}>버전</span>
             <span style={{ textAlign: 'center' }}>상태</span>
             <span style={{ textAlign: 'center' }}>크기</span>
@@ -106,16 +109,14 @@ function DocumentsPage() {
             <div className="p-4 text-center muted">등록된 문서가 없습니다.</div>
           )}
           {docs?.map((d) => {
-            const project = projects?.find((p) => p.id === d.projectId)
             return (
-              <div key={d.id} className="table-row" style={{ gridTemplateColumns: 'minmax(150px, 1.2fr) 90px minmax(200px, 3fr) 80px 110px 100px 120px', gap: '8px' }}>
-                <span className="truncate" title={project?.name}>{project?.name || '-'}</span>
+              <div key={d.id} className="table-row" style={{ gridTemplateColumns: 'minmax(250px, 3fr) 100px 80px 110px 100px 120px', gap: '8px' }}>
+                <span style={{ fontWeight: 500, color: '#e8ecf7', display: 'flex', alignItems: 'center' }} className="truncate">
+                  <FileText size={16} style={{ marginRight: '8px', minWidth: '16px', flexShrink: 0 }} />
+                  <span className="truncate" title={d.name}>{d.name}</span>
+                </span>
                 <span>
                   <span className="badge">{d.category}</span>
-                </span>
-                <span style={{ fontWeight: 500, color: '#e8ecf7', display: 'flex', alignItems: 'center' }} className="truncate">
-                  <FileText size={16} style={{ marginRight: '8px', minWidth: '16px' }} />
-                  <span className="truncate" title={d.name}>{d.name}</span>
                 </span>
                 <span style={{ textAlign: 'center' }}>
                   <span className="badge badge-neutral">{d.currentVersion}</span>
@@ -139,8 +140,8 @@ function DocumentsPage() {
                   </button>
                   <button
                     className="icon-button"
-                    onClick={() => handlePrint(d.filePath)}
-                    title="인쇄"
+                    onClick={() => handlePrint(d.id)}
+                    title="인쇄 / 다운로드"
                     style={{ width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginLeft: 0 }}
                   >
                     <Printer size={16} />
@@ -182,4 +183,3 @@ function DocumentsPage() {
 }
 
 export default DocumentsPage
-

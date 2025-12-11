@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react'
-import { X, Upload, FileText, Plus } from 'lucide-react'
+import { X, Upload, FileText, Paperclip } from 'lucide-react'
 import { apiClient } from '../lib/api'
 import { useToast } from './ToastProvider'
 import { useProjectContext } from '../context/ProjectContext'
@@ -18,8 +18,8 @@ export default function DocumentUploadModal({ onClose, onSuccess }: DocumentUplo
 
     const [form, setForm] = useState({
         projectId: selectedId || '',
-        category: 'CONTRACT', // Default
-        type: '계약서', // Sub-type
+        category: 'CONTRACT',
+        type: '',
         name: '',
         status: 'DRAFT',
         securityLevel: 'NORMAL'
@@ -27,14 +27,10 @@ export default function DocumentUploadModal({ onClose, onSuccess }: DocumentUplo
     const [file, setFile] = useState<File | null>(null)
     const [isSubmitting, setIsSubmitting] = useState(false)
 
-    // Helper: auto-fill name when file selected
+    // Handle file selection (Do NOT auto-fill name)
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
-            const f = e.target.files[0]
-            setFile(f)
-            if (!form.name) {
-                setForm(prev => ({ ...prev, name: f.name }))
-            }
+            setFile(e.target.files[0])
         }
     }
 
@@ -42,6 +38,10 @@ export default function DocumentUploadModal({ onClose, onSuccess }: DocumentUplo
         e.preventDefault()
         if (!form.projectId) {
             show('프로젝트를 선택해주세요.', 'warning')
+            return
+        }
+        if (!form.name) {
+            show('문서명을 입력해주세요.', 'warning')
             return
         }
         if (!file) {
@@ -54,29 +54,33 @@ export default function DocumentUploadModal({ onClose, onSuccess }: DocumentUplo
             const formData = new FormData()
             formData.append('projectId', form.projectId)
             formData.append('category', form.category)
-            formData.append('type', form.type)
-            formData.append('name', form.name)
+            formData.append('type', form.type || '')
+            formData.append('name', form.name) // Official Document Name
             formData.append('status', form.status)
             formData.append('securityLevel', form.securityLevel)
             formData.append('file', file)
 
-            await apiClient.post('/documents/upload', formData, {
-                headers: { 'Content-Type': 'multipart/form-data' }
+            const baseURL = (apiClient.defaults.baseURL || '/api').replace(/\/$/, '')
+            const response = await fetch(`${baseURL}/documents/upload`, {
+                method: 'POST',
+                body: formData,
             })
+
+            if (!response.ok) {
+                const errData = await response.json().catch(() => ({}))
+                throw new Error(errData.details || errData.error || `Upload failed with status ${response.status}`)
+            }
 
             show('문서가 업로드되었습니다.', 'success')
             onSuccess()
             onClose()
         } catch (err: any) {
             console.error(err)
-            show('업로드 실패: ' + (err.response?.data?.error || err.message), 'error')
+            show('업로드 실패: ' + (err.message || 'Unknown error'), 'error')
         } finally {
             setIsSubmitting(false)
         }
     }
-
-    // Create a local URL for preview if file is selected
-    const filePreviewUrl = file ? URL.createObjectURL(file) : '#'
 
     return (
         <div className="modal-overlay" onClick={onClose}>
@@ -94,15 +98,15 @@ export default function DocumentUploadModal({ onClose, onSuccess }: DocumentUplo
                 </div>
                 <div className="modal-header">
                     <h3>새 문서 업로드</h3>
-                    <p style={{ fontSize: '0.8rem', color: '#ff8787', marginTop: '0.5rem', lineHeight: '1.4' }}>
-                        📌 <strong>유의사항</strong>: 프로젝트 공식 문서는 <strong>PDF</strong> 형식으로 업로드하는 것을 원칙으로 합니다.<br />
-                        (사진 등 다중 파일은 PDF로 변환하여 등록해주세요.)
+                    <p style={{ fontSize: '0.8rem', color: '#868e96', marginTop: '0.5rem', lineHeight: '1.4' }}>
+                        문서명은 프로젝트 공식 관리 명칭을 입력해주세요.<br />
+                        (예: 2024년 10월 안전점검 보고서)
                     </p>
                 </div>
 
                 <form onSubmit={handleSubmit} className="form-grid single-col">
                     <label>
-                        <span>프로젝트</span>
+                        <span>프로젝트 <span style={{ color: '#fa5252' }}>*</span></span>
                         <select
                             value={form.projectId}
                             onChange={e => setForm({ ...form, projectId: e.target.value })}
@@ -132,7 +136,7 @@ export default function DocumentUploadModal({ onClose, onSuccess }: DocumentUplo
                             </select>
                         </label>
                         <label>
-                            <span>문서 종류</span>
+                            <span>문서 종류 (Type)</span>
                             <input
                                 value={form.type}
                                 onChange={e => setForm({ ...form, type: e.target.value })}
@@ -142,62 +146,73 @@ export default function DocumentUploadModal({ onClose, onSuccess }: DocumentUplo
                     </div>
 
                     <label>
-                        <span>문서명 (파일 선택)</span>
+                        <span>문서명 (Official Title) <span style={{ color: '#fa5252' }}>*</span></span>
+                        <input
+                            value={form.name}
+                            onChange={e => setForm({ ...form, name: e.target.value })}
+                            placeholder="프로젝트 공식 문서명을 입력하세요"
+                            required
+                        />
+                    </label>
+
+                    <label>
+                        <span>파일명 (File) <span style={{ color: '#fa5252' }}>*</span></span>
                         <div style={{ display: 'flex', gap: '8px' }}>
-                            {file ? (
-                                <a
-                                    href={filePreviewUrl}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    style={{
-                                        flex: 1,
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '6px',
-                                        padding: '0 1rem',
-                                        border: '1px solid rgba(255,255,255,0.1)',
-                                        borderRadius: '4px',
-                                        background: 'rgba(255,255,255,0.05)',
-                                        textDecoration: 'none',
-                                        color: '#74c0fc',
-                                        fontSize: '0.9rem'
-                                    }}
-                                >
-                                    <FileText size={16} />
-                                    {form.name || file.name}
-                                </a>
-                            ) : (
-                                <input
-                                    value={form.name}
-                                    onChange={e => setForm({ ...form, name: e.target.value })}
-                                    placeholder="우측 버튼으로 파일 선택"
-                                    style={{ flex: 1 }}
-                                />
-                            )}
+                            <div
+                                style={{
+                                    flex: 1,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    padding: '0 1rem',
+                                    height: '42px',
+                                    border: '1px solid rgba(255,255,255,0.1)',
+                                    borderRadius: '4px',
+                                    background: 'rgba(255,255,255,0.05)',
+                                    color: file ? '#74c0fc' : '#868e96',
+                                    fontSize: '0.9rem',
+                                    overflow: 'hidden',
+                                    whiteSpace: 'nowrap',
+                                    textOverflow: 'ellipsis'
+                                }}
+                            >
+                                {file ? (
+                                    <>
+                                        <FileText size={16} style={{ flexShrink: 0 }} />
+                                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{file.name}</span>
+                                        <span style={{ fontSize: '0.8rem', color: '#495057', marginLeft: 'auto' }}>
+                                            {(file.size / 1024 / 1024).toFixed(2)} MB
+                                        </span>
+                                    </>
+                                ) : (
+                                    <span style={{ color: '#495057' }}>업로드할 파일을 선택하세요 (PDF 권장)</span>
+                                )}
+                            </div>
+
+                            <input
+                                type="file"
+                                ref={fileInputRef}
+                                onChange={handleFileChange}
+                                accept="application/pdf, image/*"
+                                style={{ display: 'none' }}
+                            />
 
                             <button
                                 type="button"
                                 className="icon-button"
                                 onClick={() => fileInputRef.current?.click()}
-                                title="파일 열기"
-                                style={{ width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '4px' }}
+                                style={{
+                                    width: '42px',
+                                    height: '42px',
+                                    border: '1px solid rgba(255,255,255,0.1)',
+                                    background: 'rgba(255,255,255,0.1)'
+                                }}
                             >
-                                <Plus size={20} />
+                                {file ? <X size={20} onClick={(e) => { e.stopPropagation(); setFile(null); if (fileInputRef.current) fileInputRef.current.value = ''; }} /> : <Paperclip size={20} />}
                             </button>
                         </div>
                     </label>
 
-                    <input
-                        type="file"
-                        ref={fileInputRef}
-                        onChange={handleFileChange}
-                        accept="application/pdf"
-                        style={{ display: 'none' }}
-                    />
-
-                    {/* Bottom Action Button Removed as per request (moved to header) */}
-                    {/* But wait, user said "x 버튼 좌측에 업로드 아이콘 버튼으로 업로드". Does that mean remove bottom button? Usually yes. */}
-                    {/* Let's keep a hidden submit for form enter key if needed, or just rely on header button */}
                 </form>
             </div>
         </div>

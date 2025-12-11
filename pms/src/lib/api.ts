@@ -1,33 +1,42 @@
-
 import axios from 'axios'
 
-// API 서버 기본 URL (환경 변수 또는 기본값)
+// API Base URL (defaults to local dev)
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3005/api'
 
-// Axios 인스턴스 생성
+// Axios instance
 export const apiClient = axios.create({
-    baseURL: API_BASE_URL,
-    headers: {
-        'Content-Type': 'application/json',
-    },
+  baseURL: API_BASE_URL,
 })
 
-// 요청 인터셉터 (예: 인증 토큰 추가)
+// Build absolute URL for files served via the API (e.g., /api/uploads/...)
+export const buildFileUrl = (path?: string) => {
+  if (!path) return '#'
+  if (/^https?:\/\//i.test(path)) return path
+
+  const base = apiClient.defaults.baseURL || '/api'
+  const baseAbsolute = base.startsWith('http')
+    ? base
+    : `${window.location.origin}${base.startsWith('/') ? '' : '/'}${base}`
+
+  const baseTrimmed = baseAbsolute.replace(/\/+$/, '')
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`
+  return `${baseTrimmed}${normalizedPath}`
+}
+
+// Request interceptor
 apiClient.interceptors.request.use(
-    (config) => {
-        // TODO: Firebase Auth 토큰 등을 헤더에 추가하는 로직 필요
-        // const token = await auth.currentUser?.getIdToken()
-        // if (token) config.headers.Authorization = `Bearer ${token}`
-        return config
-    },
-    (error) => Promise.reject(error)
+  (config) => {
+    // TODO: attach auth token if needed
+    return config
+  },
+  (error) => Promise.reject(error)
 )
 
-// 응답 인터셉터 (예: 에러 처리)
+// Response interceptor
 apiClient.interceptors.response.use(
-    (response) => response,
-    (error) => {
-        console.error('API Error:', error)
-        return Promise.reject(error)
-    }
+  (response) => response,
+  (error) => {
+    console.error('API Error:', error)
+    return Promise.reject(error)
+  }
 )
