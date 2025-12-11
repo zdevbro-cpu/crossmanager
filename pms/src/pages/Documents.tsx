@@ -4,14 +4,9 @@ import { useDocuments } from '../hooks/useDocuments'
 import { useProjects } from '../hooks/useProjects'
 import { useProjectContext } from '../context/ProjectContext'
 import { useToast } from '../components/ToastProvider'
-import { Trash2, Plus, Printer, FileText, Eye, Download } from 'lucide-react'
+import { Trash2, Plus, Printer, FileText, Eye } from 'lucide-react'
 import DocumentUploadModal from '../components/DocumentUploadModal'
 import DocumentDetailModal from '../components/DocumentDetailModal'
-
-const getDownloadUrl = (path?: string) => {
-  if (!path) return '#'
-  return `http://localhost:3005/${path}`
-}
 
 function DocumentsPage() {
   const { selectedId } = useProjectContext()
@@ -139,7 +134,7 @@ function DocumentsPage() {
                   </button>
                   <button
                     className="icon-button"
-                    onClick={() => handlePrint(d.filePath)}
+                    onClick={() => handlePrint(d.filePath || '')}
                     title="인쇄"
                     style={{ width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginLeft: 0 }}
                   >

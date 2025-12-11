@@ -9,7 +9,7 @@ require('dotenv').config()
 const { Pool } = require('pg')
 
 const app = express()
-const PORT = process.env.PORT || 3000
+const PORT = 3005
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(__dirname, 'uploads')
@@ -35,10 +35,24 @@ const upload = multer({
 })
 
 app.use(cors())
+app.use((req, res, next) => {
+    console.log('Global Middleware:', req.method, req.url)
+    next()
+})
 app.use(express.json({ limit: '50mb' }))
-app.use(express.urlencoded({ extended: true, limit: '50mb' }))
+app.use(express.urlencoded({ limit: '50mb', extended: true }))
 // Serve uploaded files statically
 app.use('/uploads', express.static(uploadsDir))
+
+// Routes
+const contractsRouter = require('./routes/contracts')
+const documentsRouter = require('./routes/documents')
+console.log('Documents Router loaded:', !!documentsRouter, typeof documentsRouter)
+
+
+app.get('/api/test', (req, res) => res.json({ msg: 'Test works' }))
+app.use('/api/contracts', contractsRouter)
+app.use('/api/documents', documentsRouter)
 
 // Utility helpers
 const todayStr = () => new Date().toISOString().split('T')[0]
@@ -90,16 +104,14 @@ const dbConfig = {
     user: process.env.DB_USER,
     database: process.env.DB_NAME,
     password: process.env.DB_PASSWORD,
+    port: process.env.DB_PORT || 5432,
+    ssl: { rejectUnauthorized: false }
 }
 
 if (process.env.INSTANCE_CONNECTION_NAME) {
-    // Production: Use Cloud SQL Socket
     dbConfig.host = `/cloudsql/${process.env.INSTANCE_CONNECTION_NAME}`
 } else {
-    // Local: Use TCP
     dbConfig.host = process.env.DB_HOST
-    dbConfig.port = process.env.DB_PORT || 5432
-    dbConfig.ssl = { rejectUnauthorized: false }
 }
 
 const pool = new Pool(dbConfig)
@@ -108,196 +120,138 @@ pool.connect((err) => {
     if (err) {
         console.error('Database connection error', err.stack)
     } else {
-        console.log('Database connected successfully');
+        console.log('Database connected successfully')
 
-        // Initialize DB Tables (Async)
-        (async () => {
-            try {
-                // 0. Init Projects Table
-                await pool.query(`
-                        CREATE TABLE IF NOT EXISTS projects (
-                            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                            code VARCHAR(50) UNIQUE NOT NULL,
-                            name VARCHAR(255) NOT NULL,
-                            client VARCHAR(100),
-                            address TEXT,
-                            start_date DATE,
-                            end_date DATE,
-                            description TEXT,
-                            security_level VARCHAR(20) DEFAULT '일반',
-                            pm_name VARCHAR(100),
-                            regulation_type VARCHAR(20),
-                            status VARCHAR(20) DEFAULT 'RUNNING',
-                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                        )
-                    `)
+        // Init Users Table
+        pool.query(`
+            CREATE TABLE IF NOT EXISTS users (
+                uid VARCHAR(255) PRIMARY KEY,
+                email VARCHAR(255) NOT NULL,
+                name VARCHAR(255),
+                role VARCHAR(50) DEFAULT 'field',
+                status VARCHAR(50) DEFAULT 'pending',
+                contact VARCHAR(50),
+                code VARCHAR(50),
+                branch VARCHAR(50),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `).then(() => {
+            // Ensure columns exist
+            const p1 = pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS contact VARCHAR(50)`);
+            const p2 = pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS code VARCHAR(50)`);
+            const p3 = pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS branch VARCHAR(50)`);
+            return Promise.all([p1, p2, p3]);
+        }).catch(err => console.error('Error creating/updating users table:', err))
 
-                // Seed Projects if empty
-                const { rows: pCount } = await pool.query('SELECT count(*) FROM projects')
-                if (parseInt(pCount[0].count) === 0) {
-                    await pool.query(`
-                            INSERT INTO projects (code, name, client, address, status, regulation_type)
-                            VALUES 
-                            ('PJ-2024-001', '평택 P3 설비 해체 공사', '삼성전자', '경기도 평택시', 'RUNNING', 'SAMSUNG'),
-                            ('PJ-2024-002', '파주 LGD 라인 철거', 'LG디스플레이', '경기도 파주시', 'PREPARING', 'LG')
-                        `)
-                    console.log('Sample projects seeded.')
-                }
+        // Init Resources Table (Equipment/Labor) - Simple for PMS
+        pool.query(`
+            CREATE TABLE IF NOT EXISTS resources (
+                id VARCHAR(255) PRIMARY KEY,
+                type VARCHAR(50) NOT NULL,
+                name VARCHAR(255) NOT NULL,
+                project_id VARCHAR(255),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `).catch(err => console.error('Error creating resources table:', err))
 
-                // 1. Reset Contracts Tables (Force Schema Update)
-                // await pool.query('DROP TABLE IF EXISTS contract_items CASCADE')
-                // await pool.query('DROP TABLE IF EXISTS contracts CASCADE')
+        // Init Equipment Table (EMS) - Comprehensive Equipment Management
+        pool.query(`
+            CREATE TABLE IF NOT EXISTS equipment (
+                id VARCHAR(255) PRIMARY KEY,
+                equipment_id VARCHAR(100),
+                name VARCHAR(255) NOT NULL,
+                category VARCHAR(100),
+                model VARCHAR(255),
+                manufacturer VARCHAR(255),
+                manufacture_year INTEGER,
+                specifications VARCHAR(255),
+                serial_number VARCHAR(255),
+                acquisition_date DATE,
+                equipment_status VARCHAR(50) DEFAULT '가품',
+                purchase_type VARCHAR(50),
+                purchase_amount DECIMAL(15,2),
+                residual_value DECIMAL(15,2),
+                depreciation_method VARCHAR(50),
+                contract_start_date DATE,
+                contract_end_date DATE,
+                supplier VARCHAR(255),
+                supplier_contact VARCHAR(255),
+                warranty_period VARCHAR(100),
+                registration_number VARCHAR(255),
+                insurance_info TEXT,
+                inspection_cycle VARCHAR(100),
+                last_inspection_date DATE,
+                next_inspection_date DATE,
+                assigned_site VARCHAR(255),
+                operator_name VARCHAR(255),
+                primary_use VARCHAR(255),
+                operating_hours VARCHAR(100),
+                usage_restrictions TEXT,
+                maintenance_cycle VARCHAR(100),
+                consumables_cycle VARCHAR(255),
+                parts_lifespan TEXT,
+                service_provider VARCHAR(255),
+                service_contact VARCHAR(255),
+                accumulated_hours DECIMAL(10,2),
+                fuel_consumption DECIMAL(10,2),
+                work_performance TEXT,
+                failure_records TEXT,
+                downtime_hours DECIMAL(10,2),
+                fuel_cost DECIMAL(15,2),
+                maintenance_cost DECIMAL(15,2),
+                insurance_cost DECIMAL(15,2),
+                depreciation_cost DECIMAL(15,2),
+                rental_cost DECIMAL(15,2),
+                total_cost DECIMAL(15,2),
+                documents JSONB,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `).catch(err => console.error('Error creating equipment table:', err))
 
-                await pool.query(`
-                        CREATE TABLE IF NOT EXISTS contracts (
-                            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                            project_id UUID,
-                            code VARCHAR(50) UNIQUE,
-                            type VARCHAR(20),
-                            category VARCHAR(20),
-                            name VARCHAR(255),
-                            total_amount DECIMAL(15, 2) DEFAULT 0,
-                            cost_direct DECIMAL(15, 2) DEFAULT 0,
-                            cost_indirect DECIMAL(15, 2) DEFAULT 0,
-                            risk_fee DECIMAL(15, 2) DEFAULT 0,
-                            margin DECIMAL(15, 2) DEFAULT 0,
-                            indirect_rate DECIMAL(5, 2) DEFAULT 0,
-                            risk_rate DECIMAL(5, 2) DEFAULT 0,
-                            margin_rate DECIMAL(5, 2) DEFAULT 0,
-                            attachment JSONB,
-                            regulation_config JSONB,
-                            client_manager VARCHAR(100),
-                            our_manager VARCHAR(100),
-                            contract_date DATE,
-                            start_date DATE,
-                            end_date DATE,
-                            terms_payment TEXT,
-                            terms_penalty TEXT,
-                            status VARCHAR(20) DEFAULT 'DRAFT',
-                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                        )
-                    `)
-
-                await pool.query(`
-                        CREATE TABLE IF NOT EXISTS contract_items (
-                            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                            contract_id UUID REFERENCES contracts(id) ON DELETE CASCADE,
-                            group_name VARCHAR(50),
-                            name VARCHAR(100),
-                            spec VARCHAR(100),
-                            quantity DECIMAL(12, 2) DEFAULT 0,
-                            unit VARCHAR(20),
-                            unit_price DECIMAL(15, 2) DEFAULT 0,
-                            amount DECIMAL(15, 2) DEFAULT 0,
-                            note TEXT,
-                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                        )
-                    `)
-
-                // Seed Sample Contract if empty
-                const { rows: existing } = await pool.query('SELECT count(*) FROM contracts')
-                if (parseInt(existing[0].count) === 0) {
-                    const { rows: projs } = await pool.query('SELECT id FROM projects LIMIT 1')
-                    if (projs.length > 0) {
-                        const pid = projs[0].id
-                        await pool.query(`
-                                INSERT INTO contracts (project_id, code, name, status, type, total_amount, contract_date) 
-                                VALUES ($1, 'SAMPLE-EST-001', '시스템 자동 생성 샘플 견적', 'DRAFT', 'EST', 10000000, CURRENT_DATE)
-                            `, [pid])
-                        console.log('Sample contract seeded.')
-                    }
-                }
-
-                // 2. Init Users Table
-                await pool.query(`
-                        CREATE TABLE IF NOT EXISTS users (
-                            uid VARCHAR(255) PRIMARY KEY,
-                            email VARCHAR(255) NOT NULL,
-                            name VARCHAR(255),
-                            role VARCHAR(50) DEFAULT 'field',
-                            status VARCHAR(50) DEFAULT 'pending',
-                            contact VARCHAR(50),
-                            code VARCHAR(50),
-                            branch VARCHAR(50),
-                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                        )
-                    `)
-                await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS contact VARCHAR(50)`)
-                await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS code VARCHAR(50)`)
-                await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS branch VARCHAR(50)`)
-
-                // 3. Init Resources Table
-                await pool.query(`
-                        CREATE TABLE IF NOT EXISTS resources (
-                            id VARCHAR(255) PRIMARY KEY,
-                            type VARCHAR(50) NOT NULL,
-                            name VARCHAR(255) NOT NULL,
-                            project_id VARCHAR(255),
-                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                        )
-                    `)
-
-                // 4. Init EMS Equipment Table
-                await pool.query(`
-                        CREATE TABLE IF NOT EXISTS equipment (
-                            id VARCHAR(255) PRIMARY KEY,
-                            equipment_id VARCHAR(100),
-                            name VARCHAR(255) NOT NULL,
-                            category VARCHAR(100),
-                            model VARCHAR(255),
-                            manufacturer VARCHAR(255),
-                            manufacture_year INTEGER,
-                            specifications VARCHAR(255),
-                            serial_number VARCHAR(255),
-                            acquisition_date DATE,
-                            equipment_status VARCHAR(50) DEFAULT '사용가능',
-                            purchase_type VARCHAR(50),
-                            purchase_amount DECIMAL(15,2),
-                            residual_value DECIMAL(15,2),
-                            depreciation_method VARCHAR(50),
-                            contract_start_date DATE,
-                            contract_end_date DATE,
-                            supplier VARCHAR(255),
-                            supplier_contact VARCHAR(255),
-                            warranty_period VARCHAR(100),
-                            registration_number VARCHAR(255),
-                            insurance_info TEXT,
-                            inspection_cycle VARCHAR(100),
-                            last_inspection_date DATE,
-                            next_inspection_date DATE,
-                            assigned_site VARCHAR(255),
-                            operator_name VARCHAR(255),
-                            primary_use VARCHAR(255),
-                            operating_hours VARCHAR(100),
-                            usage_restrictions TEXT,
-                            maintenance_cycle VARCHAR(100),
-                            consumables_cycle VARCHAR(255),
-                            parts_lifespan TEXT,
-                            service_provider VARCHAR(255),
-                            service_contact VARCHAR(255),
-                            accumulated_hours DECIMAL(10,2),
-                            fuel_consumption DECIMAL(10,2),
-                            work_performance TEXT,
-                            failure_records TEXT,
-                            downtime_hours DECIMAL(10,2),
-                            fuel_cost DECIMAL(15,2),
-                            maintenance_cost DECIMAL(15,2),
-                            insurance_cost DECIMAL(15,2),
-                            depreciation_cost DECIMAL(15,2),
-                            rental_cost DECIMAL(15,2),
-                            total_cost DECIMAL(15,2),
-                            documents JSONB,
-                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                        )
-                    `)
-
-            } catch (err) {
-                console.error('Error in DB Init:', err)
-            }
-        })();
+        // Init Contracts Tables (PMS)
+        pool.query(`
+            CREATE TABLE IF NOT EXISTS contracts (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                project_id UUID, -- REFERENCES projects(id) ON DELETE CASCADE,
+                code VARCHAR(50) UNIQUE,
+                type VARCHAR(20),
+                category VARCHAR(20),
+                name VARCHAR(255),
+                total_amount DECIMAL(15, 2) DEFAULT 0,
+                cost_direct DECIMAL(15, 2) DEFAULT 0,
+                cost_indirect DECIMAL(15, 2) DEFAULT 0,
+                risk_fee DECIMAL(15, 2) DEFAULT 0,
+                margin DECIMAL(15, 2) DEFAULT 0,
+                regulation_config JSONB,
+                client_manager VARCHAR(100),
+                our_manager VARCHAR(100),
+                contract_date DATE,
+                start_date DATE,
+                end_date DATE,
+                terms_payment TEXT,
+                terms_penalty TEXT,
+                status VARCHAR(20) DEFAULT 'DRAFT',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `).then(() => {
+            pool.query(`
+                CREATE TABLE IF NOT EXISTS contract_items (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    contract_id UUID REFERENCES contracts(id) ON DELETE CASCADE,
+                    group_name VARCHAR(50),
+                    name VARCHAR(100),
+                    spec VARCHAR(100),
+                    quantity DECIMAL(12, 2) DEFAULT 0,
+                    unit VARCHAR(20),
+                    unit_price DECIMAL(15, 2) DEFAULT 0,
+                    amount DECIMAL(15, 2) DEFAULT 0,
+                    note TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+             `)
+        }).catch(err => console.error('Error creating contracts tables:', err))
 
         // --- SMS Tables Init ---
         const initSmsTables = async () => {
@@ -646,249 +600,6 @@ app.delete('/api/users/:uid', async (req, res) => {
     } catch (err) {
         console.error(err)
         res.status(500).json({ error: 'Failed to delete user' })
-    }
-})
-
-// --- Contracts API ---
-
-// 1. Get All Contracts
-app.get('/api/contracts', async (req, res) => {
-    try {
-        const { projectId, type, status } = req.query
-        let query = 'SELECT * FROM contracts'
-        let conditions = []
-        let params = []
-
-        if (projectId) {
-            conditions.push(`project_id = $${params.length + 1}`)
-            params.push(projectId)
-        }
-        if (type) {
-            conditions.push(`type = $${params.length + 1}`)
-            params.push(type)
-        }
-        if (status) {
-            conditions.push(`status = $${params.length + 1}`)
-            params.push(status)
-        }
-
-        if (conditions.length > 0) {
-            query += ' WHERE ' + conditions.join(' AND ')
-        }
-
-        query += ' ORDER BY created_at DESC'
-
-        const { rows } = await pool.query(query, params)
-
-        // Fetch items for each contract
-        for (const contract of rows) {
-            const itemsRes = await pool.query('SELECT * FROM contract_items WHERE contract_id = $1 ORDER BY created_at ASC', [contract.id])
-            contract.items = itemsRes.rows
-        }
-
-        res.json(rows)
-    } catch (err) {
-        console.error(err)
-        res.status(500).json({ error: 'Failed to fetch contracts' })
-    }
-})
-
-// 2. Get Single Contract
-app.get('/api/contracts/:id', async (req, res) => {
-    try {
-        const { id } = req.params
-
-        const contractRes = await pool.query('SELECT * FROM contracts WHERE id = $1', [id])
-        if (contractRes.rows.length === 0) {
-            return res.status(404).json({ error: 'Contract not found' })
-        }
-        const contract = contractRes.rows[0]
-
-        const itemsRes = await pool.query('SELECT * FROM contract_items WHERE contract_id = $1 ORDER BY created_at ASC', [id])
-        contract.items = itemsRes.rows
-
-        res.json(contract)
-    } catch (err) {
-        console.error(err)
-        res.status(500).json({ error: 'Failed to fetch contract details' })
-    }
-})
-
-// 3. Create Contract
-app.post('/api/contracts', async (req, res) => {
-    const client = await pool.connect()
-    try {
-        await client.query('BEGIN')
-
-        const {
-            projectId, type, category, name,
-            totalAmount, costDirect, costIndirect, riskFee, margin,
-            indirectRate, riskRate, marginRate,
-            regulationConfig, clientManager, ourManager,
-            contractDate, startDate, endDate,
-            termsPayment, termsPenalty, status, items, attachment
-        } = req.body
-
-        // Generate Code
-        const dateStr = new Date().toISOString().slice(2, 10).replace(/-/g, '')
-        const rand = Math.floor(Math.random() * 1000).toString().padStart(3, '0')
-        const code = `${type === 'CONTRACT' ? 'CON' : 'EST'}-${dateStr}-${rand}`
-
-        const insertMaster = `
-            INSERT INTO contracts (
-                project_id, code, type, category, name, 
-                total_amount, cost_direct, cost_indirect, risk_fee, margin,
-                indirect_rate, risk_rate, margin_rate,
-                regulation_config, client_manager, our_manager,
-                contract_date, start_date, end_date,
-                terms_payment, terms_penalty, status, attachment
-            ) VALUES (
-                $1, $2, $3, $4, $5, 
-                $6, $7, $8, $9, $10,
-                $11, $12, $13,
-                $14, $15, $16,
-                $17, $18, $19,
-                $20, $21, $22, $23
-            ) RETURNING *
-        `
-
-        const masterParams = [
-            projectId, code, type, category, name,
-            totalAmount || 0, costDirect || 0, costIndirect || 0, riskFee || 0, margin || 0,
-            indirectRate || 0, riskRate || 0, marginRate || 0,
-            JSON.stringify(regulationConfig || {}), clientManager, ourManager,
-            contractDate, startDate, endDate,
-            termsPayment, termsPenalty, status || 'DRAFT',
-            attachment ? JSON.stringify(attachment) : null
-        ]
-
-        const { rows: masterRows } = await client.query(insertMaster, masterParams)
-        const contractId = masterRows[0].id
-
-        if (items && Array.isArray(items) && items.length > 0) {
-            const insertItem = `
-                INSERT INTO contract_items (
-                    contract_id, group_name, name, spec, 
-                    quantity, unit, unit_price, amount, note
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-            `
-
-            for (const item of items) {
-                await client.query(insertItem, [
-                    contractId, item.group, item.name, item.spec,
-                    item.quantity || 0, item.unit, item.unitPrice || 0, item.amount || 0, item.note
-                ])
-            }
-        }
-
-        await client.query('COMMIT')
-        res.status(201).json({ ...masterRows[0], code })
-    } catch (err) {
-        await client.query('ROLLBACK')
-        console.error(err)
-        res.status(500).json({ error: 'Failed to create contract' })
-    } finally {
-        client.release()
-    }
-})
-
-// 4. Update Contract
-app.put('/api/contracts/:id', async (req, res) => {
-    const client = await pool.connect()
-    try {
-        await client.query('BEGIN')
-        const { id } = req.params
-        const {
-            category, name,
-            totalAmount, costDirect, costIndirect, riskFee, margin,
-            indirectRate, riskRate, marginRate,
-            regulationConfig, clientManager, ourManager,
-            contractDate, startDate, endDate,
-            termsPayment, termsPenalty, status, items, attachment
-        } = req.body
-
-        const updateMaster = `
-            UPDATE contracts SET 
-                category = COALESCE($2, category),
-                name = COALESCE($3, name),
-                total_amount = COALESCE($4, total_amount),
-                cost_direct = COALESCE($5, cost_direct),
-                cost_indirect = COALESCE($6, cost_indirect),
-                risk_fee = COALESCE($7, risk_fee),
-                margin = COALESCE($8, margin),
-                indirect_rate = COALESCE($9, indirect_rate),
-                risk_rate = COALESCE($10, risk_rate),
-                margin_rate = COALESCE($11, margin_rate),
-                regulation_config = COALESCE($12, regulation_config),
-                client_manager = COALESCE($13, client_manager),
-                our_manager = COALESCE($14, our_manager),
-                contract_date = COALESCE($15, contract_date),
-                start_date = COALESCE($16, start_date),
-                end_date = COALESCE($17, end_date),
-                terms_payment = COALESCE($18, terms_payment),
-                terms_penalty = COALESCE($19, terms_penalty),
-                status = COALESCE($20, status),
-                attachment = COALESCE($21, attachment),
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = $1
-            RETURNING *
-        `
-        const masterParams = [
-            id, category, name,
-            totalAmount, costDirect, costIndirect, riskFee, margin,
-            indirectRate, riskRate, marginRate,
-            regulationConfig ? JSON.stringify(regulationConfig) : null,
-            clientManager, ourManager,
-            contractDate, startDate, endDate,
-            termsPayment, termsPenalty, status,
-            attachment ? JSON.stringify(attachment) : null
-        ]
-
-        const { rows: masterRows } = await client.query(updateMaster, masterParams)
-        if (masterRows.length === 0) {
-            await client.query('ROLLBACK')
-            return res.status(404).json({ error: 'Contract not found' })
-        }
-
-        // Full Replace Items
-        if (items && Array.isArray(items)) {
-            await client.query('DELETE FROM contract_items WHERE contract_id = $1', [id])
-
-            const insertItem = `
-                INSERT INTO contract_items (
-                    contract_id, group_name, name, spec, 
-                    quantity, unit, unit_price, amount, note
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-            `
-
-            for (const item of items) {
-                await client.query(insertItem, [
-                    id, item.group, item.name, item.spec,
-                    item.quantity || 0, item.unit, item.unitPrice || 0, item.amount || 0, item.note
-                ])
-            }
-        }
-
-        await client.query('COMMIT')
-        res.json(masterRows[0])
-    } catch (err) {
-        await client.query('ROLLBACK')
-        console.error(err)
-        res.status(500).json({ error: 'Failed to update contract' })
-    } finally {
-        client.release()
-    }
-})
-
-// 5. Delete Contract
-app.delete('/api/contracts/:id', async (req, res) => {
-    try {
-        const { id } = req.params
-        await pool.query('DELETE FROM contracts WHERE id = $1', [id])
-        res.json({ message: 'Contract deleted' })
-    } catch (err) {
-        console.error(err)
-        res.status(500).json({ error: 'Failed to delete contract' })
     }
 })
 
@@ -2234,8 +1945,6 @@ app.delete('/api/projects/:id', async (req, res) => {
         res.status(500).json({ error: 'Failed to delete project' })
     }
 })
-
-
 // ==================== SWMS APIs ====================
 require('./swms_routes')(app, pool)
 
@@ -2245,7 +1954,5 @@ if (require.main === module) {
     })
 }
 
+
 module.exports = app
-
-
-
