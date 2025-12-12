@@ -142,3 +142,7 @@ firebase-debug.log
 !PMS/.env.production
 
 !PMS/src/pages/Projects.tsx
+
+# Firebase Admin Key
+serviceAccountKey.json
+server/serviceAccountKey.json

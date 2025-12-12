@@ -55,10 +55,17 @@ export default function DocumentUploadModal({ onClose, onSuccess, initialCategor
         fetchCategories()
     }, [form.projectId])
 
-    // Handle file selection (Do NOT auto-fill name)
+    // Handle file selection (Auto-fill name if empty)
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
-            setFile(e.target.files[0])
+            const selectedFile = e.target.files[0]
+            setFile(selectedFile)
+
+            // Auto-fill document name if empty
+            if (!form.name.trim()) {
+                const fileNameWithoutExt = selectedFile.name.replace(/\.[^/.]+$/, "")
+                setForm(prev => ({ ...prev, name: fileNameWithoutExt }))
+            }
         }
     }
 
@@ -148,31 +155,46 @@ export default function DocumentUploadModal({ onClose, onSuccess, initialCategor
                         </select>
                     </label>
 
-                    <div className="grid two">
-                        <label>
-                            <span>프로젝트 산출물 (폴더명)</span>
-                            <div style={{ position: 'relative' }}>
-                                <input
-                                    list="category-options"
-                                    value={form.category}
-                                    onChange={e => setForm({ ...form, category: e.target.value })}
-                                    placeholder="폴더명을 입력하거나 선택하세요"
-                                    required
-                                />
-                                <datalist id="category-options">
-                                    {existingCategories.map(cat => (
-                                        <option key={cat} value={cat} />
-                                    ))}
-                                </datalist>
-                            </div>
-                        </label>
+                    <label>
+                        <span>프로젝트 산출물 (폴더명)</span>
+                        <div style={{ position: 'relative', width: '100%' }}>
+                            <input
+                                list="category-options"
+                                value={form.category}
+                                onChange={e => setForm({ ...form, category: e.target.value })}
+                                placeholder="폴더명을 입력하거나 선택하세요"
+                                required
+                                style={{ width: '100%' }}
+                            />
+                            <datalist id="category-options">
+                                {existingCategories.map(cat => (
+                                    <option key={cat} value={cat} />
+                                ))}
+                            </datalist>
+                        </div>
+                    </label>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                         <label>
                             <span>문서 종류 (Type)</span>
                             <input
                                 value={form.type}
                                 onChange={e => setForm({ ...form, type: e.target.value })}
                                 placeholder="예: 견적서, 도면, 보고서"
+                                style={{ width: '100%' }}
                             />
+                        </label>
+                        <label>
+                            <span>보안 등급</span>
+                            <select
+                                value={form.securityLevel}
+                                onChange={e => setForm({ ...form, securityLevel: e.target.value })}
+                                style={{ background: '#333', color: 'white', border: '1px solid #555', height: '42px', width: '100%' }}
+                            >
+                                <option value="NORMAL">NORMAL</option>
+                                <option value="CONFIDENTIAL">CONFIDENTIAL</option>
+                                <option value="SECRET">SECRET</option>
+                            </select>
                         </label>
                     </div>
 

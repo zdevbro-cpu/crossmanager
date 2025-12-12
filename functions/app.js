@@ -350,6 +350,32 @@ pool.connect((err) => {
                         )
                     `)
 
+                // 5. Init Reports Tables
+                await pool.query(`
+                    CREATE TABLE IF NOT EXISTS report_templates (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        title VARCHAR(255) NOT NULL,
+                        type VARCHAR(50),
+                        layout_config JSONB,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                `)
+
+                await pool.query(`
+                    CREATE TABLE IF NOT EXISTS reports (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        project_id UUID,
+                        template_id UUID REFERENCES report_templates(id),
+                        title VARCHAR(255) NOT NULL,
+                        report_date DATE DEFAULT CURRENT_DATE,
+                        status VARCHAR(20) DEFAULT 'DRAFT',
+                        content JSONB,
+                        created_by VARCHAR(100),
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                `)
+
             } catch (err) {
                 console.error('Error in DB Init:', err)
             }
@@ -2294,6 +2320,10 @@ app.delete('/api/projects/:id', async (req, res) => {
 
 // ==================== SWMS APIs ====================
 require('./swms_routes')(app, pool)
+
+// ==================== REPORTS APIs ====================
+const reportsRouter = require('./routes/reports')(pool)
+app.use('/api/reports', reportsRouter)
 
 if (require.main === module) {
     app.listen(PORT, () => {

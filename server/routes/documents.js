@@ -122,24 +122,33 @@ const createDocumentsRouter = (pool, uploadsDir) => {
             const pId = (projectId === 'null' || !projectId) ? null : projectId
 
             // --- Upload to Firebase Storage or Local Fallback ---
+            // --- Upload to Firebase Storage or Local Fallback ---
             const destination = `documents/${pId || 'global'}/${file.filename}`
             let dbFilePath = destination
+            let uploadedToCloud = false
 
             if (bucket) {
-                await bucket.upload(file.path, {
-                    destination: destination,
-                    metadata: {
-                        contentType: file.mimeType,
-                    }
-                })
-                // Remove temp file only if uploaded to bucket
-                try { fs.unlinkSync(file.path) } catch (e) { }
-            } else {
-                console.warn("Skipping Storage Upload (No Bucket), keeping file locally.")
-                // If local, we store the filename in uploads dir so legacy download works
+                try {
+                    await bucket.upload(file.path, {
+                        destination: destination,
+                        metadata: {
+                            contentType: file.mimeType,
+                        }
+                    })
+                    uploadedToCloud = true
+                    // Remove temp file only if uploaded to bucket
+                    try { fs.unlinkSync(file.path) } catch (e) { }
+                } catch (e) {
+                    console.warn(`Storage Upload Failed (will keep local file): ${e.message}`)
+                }
+            }
+
+            if (!uploadedToCloud) {
+                // console.warn("Skipping Storage Upload or Failed, keeping file locally.")
                 dbFilePath = file.filename
                 // Do NOT unlink file.path
             }
+            // ----------------------------------
             // ----------------------------------
 
             await client.query('BEGIN')
@@ -219,21 +228,31 @@ const createDocumentsRouter = (pool, uploadsDir) => {
             }
 
             // --- Upload to Firebase Storage or Local Fallback ---
+            // --- Upload to Firebase Storage or Local Fallback ---
             const destination = `documents/${docRes.rows[0].project_id || 'global'}/${file.filename}`
             let dbFilePath = destination
+            let uploadedToCloud = false
 
             if (bucket) {
-                await bucket.upload(file.path, {
-                    destination: destination,
-                    metadata: {
-                        contentType: file.mimeType,
-                    }
-                })
-                try { fs.unlinkSync(file.path) } catch (e) { }
-            } else {
+                try {
+                    await bucket.upload(file.path, {
+                        destination: destination,
+                        metadata: {
+                            contentType: file.mimeType,
+                        }
+                    })
+                    uploadedToCloud = true
+                    try { fs.unlinkSync(file.path) } catch (e) { }
+                } catch (e) {
+                    console.warn(`Storage Upload Failed (will keep local file): ${e.message}`)
+                }
+            }
+
+            if (!uploadedToCloud) {
                 // Fallback
                 dbFilePath = file.filename
             }
+            // ----------------------------------
             // ----------------------------------
 
             await client.query('BEGIN')

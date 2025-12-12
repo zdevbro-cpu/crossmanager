@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { X, FileText, Upload, ExternalLink, RefreshCw, Plus, Trash2, Pencil, Check, Edit2 } from 'lucide-react'
+import { X, FileText, Upload, ExternalLink, RefreshCw, Plus, Trash2, Check } from 'lucide-react'
 import { apiClient } from '../lib/api'
 import { openPrintWindow } from '../utils/printWindow'
 import { useToast } from './ToastProvider'
@@ -341,9 +341,12 @@ export default function DocumentDetailModal({ documentId, onClose, onUpdate, ini
                                 <span
                                     style={{ color: '#74c0fc', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
                                     onClick={() => handlePrint()}
+                                    title={fileName} // Tooltip showing full filename
                                 >
                                     <FileText size={16} />
-                                    <span style={{ textDecoration: 'underline', textUnderlineOffset: '4px' }}>{fileName}</span>
+                                    <span style={{ textDecoration: 'underline', textUnderlineOffset: '4px' }}>
+                                        파일 보기
+                                    </span>
                                     <span className="muted" style={{ fontSize: '0.9rem', textDecoration: 'none' }}>
                                         ({displayFileSize ? (displayFileSize / 1024 / 1024).toFixed(2) + ' MB' : '0 MB'})
                                     </span>

@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Plus, Edit2, Trash2, Save, X } from 'lucide-react'
 import './Page.css' // Reuse existing page styles
-
+import axios from 'axios'
 
 // Check Item Interface
 interface ChecklistItem {
@@ -18,54 +18,36 @@ interface ChecklistTemplate {
     updatedAt: string
 }
 
-// Initial Mock Data (Moved from SMS)
-const INITIAL_TEMPLATES: ChecklistTemplate[] = [
-    {
-        id: 'TPL001',
-        title: '고소작업차 작업 전 점검',
-        items: [
-            { id: '1', content: '아우트리거 설치 및 지반 상태 확인' },
-            { id: '2', content: '작업대 난간 및 안전장치 작동 여부확인' },
-            { id: '3', content: '안전대 부착설비 상태 및 체결 확인' },
-            { id: '4', content: '신호수 배치 및 작업 반경 통제' },
-            { id: '5', content: '작업자 안전모 및 보호구 착용 상태' }
-        ],
-        updatedAt: '2023-10-01'
-    },
-    {
-        id: 'TPL002',
-        title: '굴착기 작업 안전 점검',
-        items: [
-            { id: '1', content: '작업 반경 내 접근 금지 조치 및 유도원 배치' },
-            { id: '2', content: '후방 카메라 및 경보장치 작동 확인' },
-            { id: '3', content: '버켓 연결핀 및 안전핀 체결 상태' },
-            { id: '4', content: '지반 침하 우려 구간 보강 조치' },
-            { id: '5', content: '운전자 자격 및 보험 가입 여부 확인' }
-        ],
-        updatedAt: '2023-10-05'
-    },
-    {
-        id: 'TPL003',
-        title: '가설 전기 분전반 점검',
-        items: [
-            { id: '1', content: '누전차단기 작동 테스트 (시험 버튼)' },
-            { id: '2', content: '외함 접지 연결 상태 확인' },
-            { id: '3', content: '케이블 피복 손상 여부 및 결선 상태' },
-            { id: '4', content: '충전부 방호 조치 (덮개 등)' },
-            { id: '5', content: '분전반 앞 적재물 없음 확인' }
-        ],
-        updatedAt: '2023-10-10'
-    }
-]
-
 export default function SystemChecklist() {
-    const [templates, setTemplates] = useState<ChecklistTemplate[]>(INITIAL_TEMPLATES)
+    const [templates, setTemplates] = useState<ChecklistTemplate[]>([])
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [editingTemplate, setEditingTemplate] = useState<ChecklistTemplate | null>(null)
 
     // Form State
     const [formTitle, setFormTitle] = useState('')
     const [formItems, setFormItems] = useState<ChecklistItem[]>([{ id: Date.now().toString(), content: '' }])
+
+    // Fetch Templates from Backend
+    const fetchTemplates = async () => {
+        try {
+            const res = await axios.get('/api/sms/checklist-templates')
+            // Map DB fields (snake_case) to Frontend (camelCase)
+            const mapped = res.data.map((t: any) => ({
+                id: t.id,
+                title: t.title,
+                items: typeof t.items === 'string' ? JSON.parse(t.items) : t.items, // Handle JSONB parsing if needed
+                category: t.category,
+                updatedAt: t.updated_at ? t.updated_at.split('T')[0] : ''
+            }))
+            setTemplates(mapped)
+        } catch (err) {
+            console.error('Failed to fetch templates:', err)
+        }
+    }
+
+    useEffect(() => {
+        fetchTemplates()
+    }, [])
 
     const openCreateModal = () => {
         setEditingTemplate(null)
@@ -95,7 +77,7 @@ export default function SystemChecklist() {
         setFormItems(newItems)
     }
 
-    const handleSave = () => {
+    const handleSave = async () => {
         if (!formTitle.trim()) {
             alert('템플릿 제목을 입력해주세요.')
             return
@@ -107,29 +89,40 @@ export default function SystemChecklist() {
             return
         }
 
-        if (editingTemplate) {
-            // Update
-            setTemplates(templates.map(t =>
-                t.id === editingTemplate.id
-                    ? { ...t, title: formTitle, items: cleanItems, updatedAt: new Date().toISOString().split('T')[0] }
-                    : t
-            ))
-        } else {
-            // Create
-            const newTpl: ChecklistTemplate = {
-                id: `TPL${String(templates.length + 1).padStart(3, '0')}`,
-                title: formTitle,
-                items: cleanItems,
-                updatedAt: new Date().toISOString().split('T')[0]
+        try {
+            if (editingTemplate) {
+                // Update (PUT)
+                await axios.put(`/api/sms/checklist-templates/${editingTemplate.id}`, {
+                    title: formTitle,
+                    items: cleanItems,
+                    category: editingTemplate.category
+                })
+            } else {
+                // Create (POST)
+                await axios.post('/api/sms/checklist-templates', {
+                    title: formTitle,
+                    items: cleanItems,
+                    category: 'General' // Default category
+                })
             }
-            setTemplates([...templates, newTpl])
+            // Refresh list
+            await fetchTemplates()
+            setIsModalOpen(false)
+        } catch (err) {
+            console.error('Failed to save template:', err)
+            alert('저장에 실패했습니다.')
         }
-        setIsModalOpen(false)
     }
 
-    const handleDelete = (id: string) => {
+    const handleDelete = async (id: string) => {
         if (confirm('정말 삭제하시겠습니까?')) {
-            setTemplates(templates.filter(t => t.id !== id))
+            try {
+                await axios.delete(`/api/sms/checklist-templates/${id}`)
+                await fetchTemplates()
+            } catch (err) {
+                console.error('Failed to delete template:', err)
+                alert('삭제에 실패했습니다.')
+            }
         }
     }
 
@@ -158,24 +151,32 @@ export default function SystemChecklist() {
                         </tr>
                     </thead>
                     <tbody>
-                        {templates.map(tpl => (
-                            <tr key={tpl.id}>
-                                <td><span className="badge badge-tag">{tpl.id}</span></td>
-                                <td>
-                                    <div style={{ fontWeight: 600 }}>{tpl.title}</div>
-                                    <div className="muted" style={{ fontSize: '0.8rem', marginTop: '0.2rem' }}>
-                                        {tpl.items.slice(0, 2).map(i => i.content).join(', ')}
-                                        {tpl.items.length > 2 && ' ...'}
-                                    </div>
-                                </td>
-                                <td>{tpl.items.length}개 항목</td>
-                                <td>{tpl.updatedAt}</td>
-                                <td style={{ textAlign: 'right' }}>
-                                    <button className="btn-icon" onClick={() => openEditModal(tpl)}><Edit2 size={16} /></button>
-                                    <button className="btn-icon danger" onClick={() => handleDelete(tpl.id)}><Trash2 size={16} /></button>
+                        {templates.length === 0 ? (
+                            <tr>
+                                <td colSpan={5} style={{ textAlign: 'center', padding: '2rem', color: '#888' }}>
+                                    등록된 템플릿이 없습니다.
                                 </td>
                             </tr>
-                        ))}
+                        ) : (
+                            templates.map(tpl => (
+                                <tr key={tpl.id}>
+                                    <td><span className="badge badge-tag">{tpl.id}</span></td>
+                                    <td>
+                                        <div style={{ fontWeight: 600 }}>{tpl.title}</div>
+                                        <div className="muted" style={{ fontSize: '0.8rem', marginTop: '0.2rem' }}>
+                                            {tpl.items.slice(0, 2).map(i => i.content).join(', ')}
+                                            {tpl.items.length > 2 && ' ...'}
+                                        </div>
+                                    </td>
+                                    <td>{tpl.items.length}개 항목</td>
+                                    <td>{tpl.updatedAt}</td>
+                                    <td style={{ textAlign: 'right' }}>
+                                        <button className="btn-icon" onClick={() => openEditModal(tpl)}><Edit2 size={16} /></button>
+                                        <button className="btn-icon danger" onClick={() => handleDelete(tpl.id)}><Trash2 size={16} /></button>
+                                    </td>
+                                </tr>
+                            ))
+                        )}
                     </tbody>
                 </table>
             </div>

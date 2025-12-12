@@ -135,11 +135,21 @@ export interface PmsDocument {
 // Alias for compatibility if needed, or replace usages
 export type DocumentMeta = PmsDocument
 
-export interface ReportMeta {
+export interface Report {
   id: string
-  projectId: string
-  type: "일일" | "주간" | "월간"
-  period: string
-  format: CustomerRegulation
-  createdAt: string
+  projectId: string // project_id
+  templateId?: string // template_id
+  title: string
+  reportDate: string // report_date
+  status: "DRAFT" | "PENDING" | "APPROVED" | "REJECTED"
+  content: any // JSONB
+  createdBy?: string // created_by
+  createdAt?: string
+
+  // Frontend helpers
+  type?: string // Derived from template or content
+  templateTitle?: string
 }
+
+// Alias for compatibility
+export type ReportMeta = Report

@@ -114,3 +114,25 @@
   - **Header:** 불필요한 가이드 텍스트('(폴더 생성 : 우클릭)') 삭제 및 간결화.
 - **백엔드 (Backend):**
   - **파일 스트리밍:** `docview` 라우트에서 파일 데이터를 효율적으로 스트리밍하도록 로직 개선, Firebase Storage 및 로컬 파일 시스템 호환성 강화.
+
+### 2025-12-12 (개발 환경 동기화 이슈)
+- **증상:** Git Pull 이후 `SystemChecklist` 데이터 조회 불가 및 템플릿 기능 작동 안함.
+- **원인:**
+  - 집(Home) 작업분이 커밋될 때 백엔드 API(`checklist-templates`) 및 DB 테이블 생성 로직이 누락되었거나, 프론트엔드가 Mock Data 상태로 남아있었음.
+  - `git pull` 이후 Node.js 서버 프로세스를 재시작하지 않아 구버전 코드가 메모리에 상주함.
+- **조치:**
+  - **Server:** `sms_checklist_templates` 테이블 생성 쿼리 및 CRUD API(`GET/POST/PUT/DELETE`) 구현 추가.
+  - **Client:** `SystemChecklist.tsx`의 Mock Data 제거 및 실제 API(`axios`) 연동.
+  - **Process:** Node.js 서버 프로세스 강제 종료 후 재시작하여 정상화.
+
+### 2025-12-12 (Firebase 인증 및 파일 저장소 이슈)
+- **증상:** 문서 업로드 시 `500 Error: Could not load the default credentials`.
+- **원인:** 사무실 개발 환경에 Google Cloud Service Account Key 파일이 없어 Firebase Storage 접근 불가.
+- **조치:**
+  - `server/routes/documents.js`: Storage 업로드 실패(인증 에러 등) 시 **Local Disk(`uploads/`)**에 파일을 유지하도록 Fallback 로직 구현.
+  - **주의:** 로컬에 임시 저장된 파일은 **자동으로 Cloud Storage로 동기화되지 않음**. 추후 키 파일 확보 후 별도 마이그레이션 스크립트 실행이 필요함.
+
+### 2025-12-12 (UX 개선: 문서 업로드 및 상세)
+- **문서 업로드:** 파일 선택 시, 파일명(확장자 제외)을 문서명 필드에 자동 입력하는 편의 기능 추가 (입력란이 비어있을 경우).
+- **문서 상세:** 문서명과 파일명 중복 표시를 개선하여, 첨부파일 영역은 "파일 보기"로 간소화(파일명은 툴팁으로 제공).
+- **문서 업로드:** 보안 등급 선택 필드 추가 (기본값: NORMAL, UI: 문서 종류와 2열 배치).

@@ -159,8 +159,23 @@ app.get(['/api/docview/:id/:filename', '/api/docview/:id'], async (req, res) => 
 
         // 3. Try Firebase Bucket (New Standard)
         const admin = require('firebase-admin')
+        const serviceAccountPath = path.join(__dirname, 'serviceAccountKey.json')
+
         if (!admin.apps.length) {
-            try { admin.initializeApp() } catch (e) { }
+            try {
+                if (fs.existsSync(serviceAccountPath)) {
+                    const serviceAccount = require(serviceAccountPath)
+                    admin.initializeApp({
+                        credential: admin.credential.cert(serviceAccount)
+                    })
+                    console.log('Firebase Admin initialized with serviceAccountKey.json')
+                } else {
+                    admin.initializeApp()
+                    console.log('Firebase Admin initialized with default credentials')
+                }
+            } catch (e) {
+                console.warn('Firebase Init Warning:', e.message)
+            }
         }
 
         // Determine bucket name (Logic matches routes/documents.js)
@@ -260,6 +275,7 @@ app.get(['/api/docview/versions/:versionId/:filename', '/api/docview/versions/:v
 
 app.use('/api/contracts', contractsRouter)
 app.use('/api/documents', createDocumentsRouter(pool, uploadsDir))
+app.use('/api/reports', require('./routes/reports')(pool))
 
 // Utility helpers
 const todayStr = () => new Date().toISOString().split('T')[0]
@@ -526,6 +542,17 @@ pool.connect((err) => {
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 `)
+
+                // 5.1 sms_checklist_templates (Standard Templates)
+                await pool.query(`
+                    CREATE TABLE IF NOT EXISTS sms_checklist_templates (
+                        id VARCHAR(50) PRIMARY KEY, -- TPL001 format or UUID
+                        title VARCHAR(255) NOT NULL,
+                        items JSONB, -- Array of objects
+                        category VARCHAR(100),
+                        updated_at DATE DEFAULT CURRENT_DATE
+                    )
+                `)
                 // 6. sms_educations
                 await pool.query(`
                     CREATE TABLE IF NOT EXISTS sms_educations (
@@ -638,6 +665,55 @@ pool.connect((err) => {
             }
         }
         initSmsTables()
+
+        // --- Report Tables Init ---
+        const initReportTables = async () => {
+            try {
+                // 1. report_templates
+                await pool.query(`
+                    CREATE TABLE IF NOT EXISTS report_templates (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        title VARCHAR(100) NOT NULL,
+                        type VARCHAR(50) NOT NULL, -- DAILY, WEEKLY, SAFETY, ETC
+                        layout_config JSONB,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                `)
+
+                // 2. reports
+                await pool.query(`
+                    CREATE TABLE IF NOT EXISTS reports (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        project_id UUID,
+                        template_id UUID REFERENCES report_templates(id),
+                        title VARCHAR(200),
+                        report_date DATE DEFAULT CURRENT_DATE,
+                        status VARCHAR(20) DEFAULT 'DRAFT', -- DRAFT, PENDING, APPROVED, REJECTED
+                        content JSONB,
+                        created_by VARCHAR(100),
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                `)
+
+                // 3. report_approvals
+                await pool.query(`
+                    CREATE TABLE IF NOT EXISTS report_approvals (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        report_id UUID REFERENCES reports(id) ON DELETE CASCADE,
+                        approver_id VARCHAR(100),
+                        step INTEGER DEFAULT 1,
+                        status VARCHAR(20) DEFAULT 'PENDING',
+                        comment TEXT,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                `)
+                console.log('Report Tables initialized successfully')
+            } catch (err) {
+                console.error('Error creating Report tables:', err)
+            }
+        }
+        initReportTables()
     }
 })
 
@@ -676,6 +752,81 @@ app.get('/api/sms/checklists', async (req, res) => {
     } catch (err) {
         console.error(err)
         res.status(500).json({ error: 'Failed to fetch checklists' })
+    }
+})
+
+// --- Checklist Templates API ---
+
+// 1. Get All Templates
+app.get('/api/sms/checklist-templates', async (req, res) => {
+    try {
+        const { rows } = await pool.query('SELECT * FROM sms_checklist_templates ORDER BY id ASC')
+        res.json(rows)
+    } catch (err) {
+        console.error(err)
+        res.status(500).json({ error: 'Failed to fetch templates' })
+    }
+})
+
+// 2. Create Template
+app.post('/api/sms/checklist-templates', async (req, res) => {
+    try {
+        const { id, title, items, category } = req.body
+
+        let newId = id
+        // Auto Generate ID if not provided (TPLxxx)
+        if (!newId) {
+            const { rows } = await pool.query("SELECT id FROM sms_checklist_templates WHERE id LIKE 'TPL%' ORDER BY id DESC LIMIT 1")
+            if (rows.length > 0) {
+                const num = parseInt(rows[0].id.replace('TPL', '')) + 1
+                newId = `TPL${String(num).padStart(3, '0')}`
+            } else {
+                newId = 'TPL001'
+            }
+        }
+
+        const query = `
+            INSERT INTO sms_checklist_templates (id, title, items, category, updated_at)
+            VALUES ($1, $2, $3, $4, CURRENT_DATE)
+            RETURNING *
+        `
+        const { rows: saved } = await pool.query(query, [newId, title, JSON.stringify(items), category])
+        res.status(201).json(saved[0])
+    } catch (err) {
+        console.error(err)
+        res.status(500).json({ error: 'Failed to create template' })
+    }
+})
+
+// 3. Update Template
+app.put('/api/sms/checklist-templates/:id', async (req, res) => {
+    try {
+        const { id } = req.params
+        const { title, items, category } = req.body
+        const query = `
+            UPDATE sms_checklist_templates 
+            SET title = $1, items = $2, category = $3, updated_at = CURRENT_DATE
+            WHERE id = $4
+            RETURNING *
+        `
+        const { rows } = await pool.query(query, [title, JSON.stringify(items), category, id])
+        if (rows.length === 0) return res.status(404).json({ error: 'Template not found' })
+        res.json(rows[0])
+    } catch (err) {
+        console.error(err)
+        res.status(500).json({ error: 'Failed to update template' })
+    }
+})
+
+// 4. Delete Template
+app.delete('/api/sms/checklist-templates/:id', async (req, res) => {
+    try {
+        const { id } = req.params
+        await pool.query('DELETE FROM sms_checklist_templates WHERE id = $1', [id])
+        res.json({ message: 'Template deleted' })
+    } catch (err) {
+        console.error(err)
+        res.status(500).json({ error: 'Failed to delete template' })
     }
 })
 
