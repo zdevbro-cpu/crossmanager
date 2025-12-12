@@ -6,6 +6,7 @@ import { mockProjects } from '../data/mock'
 import { useProjectMembers, useRemoveMember, useSetMemberRole, type RoleCode } from '../hooks/useProjectMembers'
 import { useToast } from '../components/ToastProvider'
 import { Trash2, Plus, Eye, RotateCcw, CheckCircle, XCircle } from 'lucide-react'
+import ChecklistTemplateManager from '../components/ChecklistTemplateManager'
 
 const roles: { code: RoleCode; label: string }[] = [
   { code: 'executive', label: '경영자' },
@@ -37,7 +38,7 @@ function MembersPage() {
   const members = data ?? []
 
   // Tab State
-  const [activeTab, setActiveTab] = useState<'users' | 'resources' | 'my-role'>('users')
+  const [activeTab, setActiveTab] = useState<'users' | 'resources' | 'templates' | 'my-role'>('users')
 
   // Users State
   const [allUsers, setAllUsers] = useState<any[]>([])
@@ -217,6 +218,20 @@ function MembersPage() {
           }}
         >
           자원(장비/인력) 관리
+        </button>
+        <button
+          onClick={() => setActiveTab('templates')}
+          style={{
+            padding: '0.75rem 1rem',
+            background: 'none',
+            border: 'none',
+            borderBottom: activeTab === 'templates' ? '2px solid #3b82f6' : '2px solid transparent',
+            color: activeTab === 'templates' ? '#3b82f6' : '#64748b',
+            fontWeight: activeTab === 'templates' ? 600 : 400,
+            cursor: 'pointer'
+          }}
+        >
+          체크리스트 템플릿
         </button>
         <button
           onClick={() => setActiveTab('my-role')}
@@ -438,6 +453,13 @@ function MembersPage() {
             </div>
           </section>
         </>
+      )}
+
+      {/* Tab Content: Checklist Templates */}
+      {activeTab === 'templates' && (
+        <section>
+          <ChecklistTemplateManager />
+        </section>
       )}
 
       {/* Tab Content: My Role */}

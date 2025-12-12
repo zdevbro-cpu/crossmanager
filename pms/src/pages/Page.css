@@ -927,7 +927,32 @@ select::-webkit-scrollbar-thumb:hover {
 
 .signature-box {
   margin-top: 2rem;
+
   display: flex;
   justify-content: center;
   gap: 3rem;
+}
+
+/* Button Secondary (Dark Outline) */
+.btn-secondary {
+  padding: 0.55rem 1rem;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  /* Dark Transparent */
+  color: #c6d5f0;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  font-weight: 500;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.3);
+  color: #f2f6ff;
+  transform: translateY(-1px);
 }

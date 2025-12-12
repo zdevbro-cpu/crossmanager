@@ -1,5 +1,9 @@
 import { Suspense, lazy } from 'react'
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom'
+import {
+  LayoutDashboard,
+  FileText
+} from 'lucide-react'
 import './App.css'
 import Spinner from './components/Spinner'
 import { ProjectProvider } from './context/ProjectContext'
@@ -8,6 +12,7 @@ import ProjectSwitcher from './components/ProjectSwitcher'
 import RequireAuth from './components/RequireAuth'
 import { useAuth } from './hooks/useAuth'
 import LoginPage from './pages/Login'
+
 
 const ContractsPage = lazy(() => import('./pages/Contracts'))
 const DocumentsPage = lazy(() => import('./pages/Documents'))
@@ -18,7 +23,6 @@ const ResourcesPage = lazy(() => import('./pages/Resources'))
 const SchedulePage = lazy(() => import('./pages/Schedule'))
 const MembersPage = lazy(() => import('./pages/Members'))
 const SignupPage = lazy(() => import('./pages/Signup'))
-const SystemChecklistPage = lazy(() => import('./pages/SystemChecklist'))
 
 const navItems = [
   { path: '/overview', label: '대시보드' },
@@ -26,9 +30,9 @@ const navItems = [
   { path: '/schedule', label: '일정(WBS)' },
   { path: '/resources', label: '자원' },
   { path: '/contracts', label: '계약/견적' },
-  { path: '/documents', label: '문서' },
-  { path: '/reports', label: '보고' },
-  { path: '/checklists', label: '체크리스트설정' },
+
+  { id: 'documents', label: '문서관리', icon: <FileText size={20} />, path: '/documents' },
+  { id: 'reports', label: '보고서', icon: <LayoutDashboard size={20} />, path: '/reports' },
   { path: '/members', label: '시스템관리' },
 ]
 
@@ -87,6 +91,7 @@ function App() {
               <Routes>
                 <Route path="/" element={<Navigate to="/overview" replace />} />
                 <Route path="/login" element={<LoginPage />} />
+
                 <Route path="/signup" element={<SignupPage />} />
                 <Route
                   path="/overview"
@@ -141,14 +146,6 @@ function App() {
                   element={
                     <RequireAuth>
                       <ReportsPage />
-                    </RequireAuth>
-                  }
-                />
-                <Route
-                  path="/checklists"
-                  element={
-                    <RequireAuth>
-                      <SystemChecklistPage />
                     </RequireAuth>
                   }
                 />

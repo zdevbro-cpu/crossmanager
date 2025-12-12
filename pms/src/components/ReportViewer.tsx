@@ -1,6 +1,6 @@
 
 import '../pages/Page.css'
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, ExternalLink } from 'lucide-react'
 
 interface ReportContent {
     type?: string
@@ -8,9 +8,9 @@ interface ReportContent {
     weather: string
     pms: { activeTasks: any[], totalActive: number }
     sms: { dris: any[], incidents: any[], safetyStatus: string }
-    ems: { deployedCount: number, equipmentList: any[] }
+    ems: { deployedCount: number, equipmentList: any[], utilization?: number }
     issues?: { openIncidents: any[] }
-    swms?: { generations: any[], totalCount: number }
+    swms?: { generations: any[], totalCount: number, revenue?: number }
 }
 
 const getTitle = (type?: string) => {
@@ -78,7 +78,7 @@ export default function ReportViewer({ data, title }: { data: any, title?: strin
 
             {/* 1. Summary */}
             <div className="report-section">
-                <h4>1. 금일 작업 요약</h4>
+                <h4>1. 금일 작업을 요약</h4>
                 <div className="box-text">
                     {content.summary || '요약 정보 없음'}
                 </div>
@@ -86,7 +86,10 @@ export default function ReportViewer({ data, title }: { data: any, title?: strin
 
             {/* 2. PMS (공정) */}
             <div className="report-section">
-                <h4>2. 공정 현황 (진행 중: {content.pms?.totalActive ?? 0}건)</h4>
+                <h4 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    2. 공정 현황 (진행 중: {content.pms?.totalActive ?? 0}건)
+                    <a href="/pms" target="_blank" className="link-muted" style={{ fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '2px' }}>PMS 상세 <ExternalLink size={12} /></a>
+                </h4>
                 <div className="simple-table-col">
                     {content.pms?.activeTasks?.map((t, i) => {
                         const isDelay = t.delay_risk === true || t.delay_risk === 'HIGH' || t.name.includes('지연');
@@ -137,7 +140,10 @@ export default function ReportViewer({ data, title }: { data: any, title?: strin
             {/* 3. SMS & EMS Grid */}
             <div className="grid two">
                 <div className="report-section">
-                    <h4>3. 안전 활동</h4>
+                    <h4 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        3. 안전 활동
+                        <span className="badge-outline" style={{ fontSize: '0.7rem' }}>SMS 연동</span>
+                    </h4>
                     <ul className="dot-list">
                         <li>TBM/DRI 시행: <strong>{content.sms?.dris?.length ?? 0}건</strong></li>
                         <li>사고/이슈: <strong style={{ color: content.sms?.incidents?.length > 0 ? '#ff6b6b' : '#16c482' }}>
@@ -152,15 +158,24 @@ export default function ReportViewer({ data, title }: { data: any, title?: strin
                 </div>
 
                 <div className="report-section">
-                    <h4>4. 자원 및 폐기물 현황</h4>
+                    <h4 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        4. 자원 및 폐기물 현황
+                        <span className="badge-outline" style={{ fontSize: '0.7rem' }}>EMS/SWMS</span>
+                    </h4>
                     <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem' }}>
                         <div className="stats-box" style={{ flex: 1, background: 'rgba(255,255,255,0.05)', padding: '1rem', borderRadius: '8px', textAlign: 'center', border: '1px solid rgba(255,255,255,0.1)' }}>
-                            <span className="label" style={{ display: 'block', fontSize: '0.85rem', color: '#9fb2cc', marginBottom: '0.5rem' }}>투입 장비</span>
-                            <span className="value" style={{ display: 'block', fontSize: '1.5rem', fontWeight: 700, color: '#4ea1ff' }}>{content.ems?.deployedCount ?? 0} <span style={{ fontSize: '0.9rem' }}>대</span></span>
+                            <span className="label" style={{ display: 'block', fontSize: '0.85rem', color: '#9fb2cc', marginBottom: '0.5rem' }}>장비 가동률</span>
+                            <span className="value" style={{ display: 'block', fontSize: '1.5rem', fontWeight: 700, color: '#4ea1ff' }}>
+                                {content.ems?.utilization ? `${content.ems.utilization}%` : '-'}
+                            </span>
+                            <span className="sub-value" style={{ fontSize: '0.8rem', color: '#94a3b8' }}>{content.ems?.deployedCount ?? 0}대 운용 중</span>
                         </div>
                         <div className="stats-box" style={{ flex: 1, background: 'rgba(255,255,255,0.05)', padding: '1rem', borderRadius: '8px', textAlign: 'center', border: '1px solid rgba(255,255,255,0.1)' }}>
-                            <span className="label" style={{ display: 'block', fontSize: '0.85rem', color: '#9fb2cc', marginBottom: '0.5rem' }}>폐기물 발생</span>
-                            <span className="value" style={{ display: 'block', fontSize: '1.5rem', fontWeight: 700, color: '#f59e0b' }}>{content.swms?.totalCount ?? 0} <span style={{ fontSize: '0.9rem' }}>건</span></span>
+                            <span className="label" style={{ display: 'block', fontSize: '0.85rem', color: '#9fb2cc', marginBottom: '0.5rem' }}>예상 수익 (SWMS)</span>
+                            <span className="value" style={{ display: 'block', fontSize: '1.5rem', fontWeight: 700, color: '#f59e0b' }}>
+                                {content.swms?.revenue ? (content.swms.revenue / 1000000).toFixed(1) + 'M' : '-'}
+                            </span>
+                            <span className="sub-value" style={{ fontSize: '0.8rem', color: '#94a3b8' }}>{content.swms?.totalCount ?? 0}톤 반출</span>
                         </div>
                     </div>
 

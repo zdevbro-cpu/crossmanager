@@ -276,6 +276,9 @@ app.get(['/api/docview/versions/:versionId/:filename', '/api/docview/versions/:v
 app.use('/api/contracts', contractsRouter)
 app.use('/api/documents', createDocumentsRouter(pool, uploadsDir))
 app.use('/api/reports', require('./routes/reports')(pool))
+app.use('/api/sms/checklists', require('./routes/sms_checklists')(pool))
+app.use('/api/ems', require('./routes/ems_summary')(pool))
+app.use('/api/swms', require('./routes/swms_summary')(pool))
 
 // Utility helpers
 const todayStr = () => new Date().toISOString().split('T')[0]
@@ -774,14 +777,16 @@ app.post('/api/sms/checklist-templates', async (req, res) => {
         const { id, title, items, category } = req.body
 
         let newId = id
-        // Auto Generate ID if not provided (TPLxxx)
+        // Auto Generate ID if not provided (TPL-xxx)
         if (!newId) {
-            const { rows } = await pool.query("SELECT id FROM sms_checklist_templates WHERE id LIKE 'TPL%' ORDER BY id DESC LIMIT 1")
+            const { rows } = await pool.query("SELECT id FROM sms_checklist_templates WHERE id LIKE 'TPL-%' ORDER BY id DESC LIMIT 1")
             if (rows.length > 0) {
-                const num = parseInt(rows[0].id.replace('TPL', '')) + 1
-                newId = `TPL${String(num).padStart(3, '0')}`
+                const lastId = rows[0].id
+                const numStr = lastId.replace('TPL-', '')
+                const num = parseInt(numStr) + 1
+                newId = `TPL-${String(num).padStart(3, '0')}`
             } else {
-                newId = 'TPL001'
+                newId = 'TPL-001'
             }
         }
 

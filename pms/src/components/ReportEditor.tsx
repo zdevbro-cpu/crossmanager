@@ -1,6 +1,7 @@
 
+import axios from 'axios'
 import '../pages/Page.css'
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, RefreshCcw } from 'lucide-react'
 
 interface ReportContent {
     type?: string
@@ -8,9 +9,9 @@ interface ReportContent {
     weather: string
     pms: { activeTasks: any[], totalActive: number }
     sms: { dris: any[], incidents: any[], safetyStatus: string }
-    ems: { deployedCount: number, equipmentList: any[] }
+    ems: { deployedCount: number, equipmentList: any[], utilization?: number }
     issues?: { openIncidents: any[] }
-    swms?: { generations: any[], totalCount: number }
+    swms?: { generations: any[], totalCount: number, revenue?: number }
 }
 
 interface ReportEditorProps {
@@ -24,13 +25,63 @@ export default function ReportEditor({ content, title, onChange }: ReportEditorP
         onChange({ ...content, [field]: value })
     }
 
+    const handleImportData = async () => {
+        if (!confirm('최신 모듈 데이터를 가져와서 덮어쓰시겠습니까?')) return;
+
+        try {
+            // Fetch from all modules (Project ID hardcoded to p1 for demo)
+            const [smsRes, emsRes, swmsRes] = await Promise.all([
+                axios.get('/api/sms/checklists/summary?project_id=p1'),
+                axios.get('/api/ems/summary?project_id=p1'),
+                axios.get('/api/swms/summary?project_id=p1')
+            ]);
+
+            const smsData = smsRes.data;
+            const emsData = emsRes.data;
+            const swmsData = swmsRes.data;
+
+            // Map to existing Content Structure
+            const newContent = {
+                ...content,
+                sms: {
+                    ...content.sms,
+                    dris: new Array(smsData.checklist_summary.total).fill({}), // Mock array length
+                    incidents: new Array(smsData.incident_count.accident + smsData.incident_count.near_miss).fill({}),
+                    safetyStatus: smsData.safety_compliance_rate > 90 ? 'SAFE' : 'WARNING'
+                },
+                ems: {
+                    ...content.ems,
+                    deployedCount: emsData.active_equipment_count,
+                    utilization: emsData.utilization_rate
+                },
+                swms: {
+                    generations: content.swms?.generations || [],
+                    totalCount: Math.round(swmsData.total_outbound_weight),
+                    revenue: swmsData.revenue_estimated
+                }
+            };
+
+            onChange(newContent);
+            alert('데이터 동기화 완료');
+
+        } catch (e) {
+            console.error(e);
+            alert('데이터 가져오기 실패');
+        }
+    }
+
     if (!content) return <div>No Data</div>
 
     return (
         <div className="report-paper warning-border">
             <div className="report-header-section">
-                <h3 className="report-title">{title || '보고서 수정'}</h3>
-                <div className="report-meta-grid">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                    <h3 className="report-title">{title || '보고서 수정'}</h3>
+                    <button className="btn-secondary small" onClick={handleImportData}>
+                        <RefreshCcw size={14} style={{ marginRight: '6px' }} /> 데이터 동기화
+                    </button>
+                </div>
+                <div className="report-meta-grid" style={{ marginTop: '1rem' }}>
                     <div className="meta-item">
                         <label className="label">날씨</label>
                         <input

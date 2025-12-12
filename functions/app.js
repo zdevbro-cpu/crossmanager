@@ -579,40 +579,8 @@ pool.connect((err) => {
 // ... (Existing User Management APIs) ...
 
 // --- Checklist API ---
+// Moved to routes/sms_routes.js
 
-// Create Checklist Result
-app.post('/api/sms/checklists', async (req, res) => {
-    try {
-        const { projectId, templateId, title, results } = req.body
-
-        // Convert projectId to UUID if it's 'temp-project-id' logic on frontend, or handle correctly
-        // For now, assuming valid UUID or NULL. If frontend sends non-UUID, DB will error. 
-        // We will insert NULL if invalid for demo purposes or strictly validate.
-
-        const query = `
-            INSERT INTO sms_checklists (
-                project_id, template_id, title, results, created_by, created_at
-            ) VALUES ($1, $2, $3, $4, '?�전관리자', NOW())
-            RETURNING *
-        `
-        const { rows } = await pool.query(query, [projectId, templateId, title, JSON.stringify(results)])
-        res.status(201).json(rows[0])
-    } catch (err) {
-        console.error(err)
-        res.status(500).json({ error: 'Failed to save checklist' })
-    }
-})
-
-// Get All Checklists
-app.get('/api/sms/checklists', async (req, res) => {
-    try {
-        const { rows } = await pool.query('SELECT * FROM sms_checklists ORDER BY created_at DESC')
-        res.json(rows)
-    } catch (err) {
-        console.error(err)
-        res.status(500).json({ error: 'Failed to fetch checklists' })
-    }
-})
 
 // --- User Management APIs ---
 
@@ -1673,6 +1641,11 @@ async function syncParentDates(parentId, client = pool) {
     }
 }
 
+// ==================== SMS APIs ====================
+// Mounted before inline routes to take precedence
+const smsRouter = require('./routes/sms_routes')(pool)
+app.use('/api/sms', smsRouter)
+
 // --- SMS API ---
 
 // 1. Get Risk Assessments (List)
@@ -2320,6 +2293,14 @@ app.delete('/api/projects/:id', async (req, res) => {
 
 // ==================== SWMS APIs ====================
 require('./swms_routes')(app, pool)
+
+
+// ==================== SUMMARY APIs ====================
+const emsSummaryRouter = require('./routes/ems_summary')(pool)
+const swmsSummaryRouter = require('./routes/swms_summary')(pool)
+app.use('/api/ems', emsSummaryRouter)
+app.use('/api/swms', swmsSummaryRouter)
+
 
 // ==================== REPORTS APIs ====================
 const reportsRouter = require('./routes/reports')(pool)
