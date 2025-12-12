@@ -108,6 +108,204 @@ if (true) {
 
 const pool = new Pool(dbConfig)
 
+// --- Added File Retrieval Routes (Ported from server/index.js) ---
+// 1. View Document File (Inline with Clean Name)
+app.get(['/api/docview/:id/:filename', '/api/docview/:id'], async (req, res) => {
+    try {
+        const { id } = req.params
+        console.log(`[App.js View] Request for doc id: ${id}`)
+
+        // Robust Query: Get the latest version's file info
+        const query = `
+            SELECT v.file_path, v.file_content, d.name
+            FROM documents d
+            JOIN document_versions v ON d.id = v.document_id
+            WHERE d.id = $1
+            ORDER BY 
+                CASE WHEN d.current_version = v.version THEN 1 ELSE 2 END,
+                v.created_at DESC
+            LIMIT 1
+        `
+        const resDb = await pool.query(query, [id])
+
+        if (resDb.rows.length === 0) {
+            console.log(`[App.js View] Document not found or no versions: ${id}`)
+            return res.status(404).send('Document not found')
+        }
+
+        const row = resDb.rows[0];
+        const filePath = row.file_path
+        const fileContent = row.file_content
+        const docName = row.name || 'Document'
+
+        let mimeType = 'application/octet-stream'
+        const ext = path.extname(filePath || docName).toLowerCase()
+        if (ext === '.pdf') mimeType = 'application/pdf'
+        else if (ext === '.png') mimeType = 'image/png'
+        else if (ext === '.jpg' || ext === '.jpeg') mimeType = 'image/jpeg'
+
+        // Safe filename for header
+        let safeName = docName.replace(/[^a-zA-Z0-9가-힣\s\-_.]/g, '').trim()
+        if (!safeName) safeName = 'document'
+        const downloadFilename = `${safeName}${ext}`
+        const encodedName = encodeURIComponent(downloadFilename)
+
+        res.setHeader('Content-Type', mimeType)
+        res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodedName}`)
+
+        // 1. Try DB Content (Base64) - Persistent Legacy
+        if (fileContent) {
+            const buffer = Buffer.from(fileContent, 'base64')
+            console.log(`[View] Serving from DB: ${buffer.length} bytes`)
+            return res.send(buffer)
+        }
+
+        // 2. Try Local Disk (Fallback or Legacy Local)
+        let fullPath = filePath ? path.join(__dirname, 'uploads', path.basename(filePath)) : null
+
+        // If file_path is like "documents/...", it might be GCS. 
+        // If file_path is simple filename, it's local.
+        if (filePath && !filePath.includes('/')) {
+            fullPath = path.join(uploadsDir, filePath)
+        }
+
+        if (fullPath && fs.existsSync(fullPath)) {
+            console.log(`[View] Serving file from disk: ${fullPath}`)
+            return res.sendFile(fullPath)
+        }
+
+        // 3. Try Firebase Bucket (New Standard)
+        const admin = require('firebase-admin')
+
+        // Initialize if not already
+        if (!admin.apps.length) {
+            // Note: In Cloud Functions, default creds usually work. 
+            // We blindly try default if we don't have key file logic here.
+            admin.initializeApp()
+        }
+
+        // Determine bucket name (Logic matches routes/documents.js)
+        let bucketName = 'crossmanager-1e21c.firebasestorage.app'
+        try {
+            if (process.env.FIREBASE_CONFIG) {
+                const config = JSON.parse(process.env.FIREBASE_CONFIG)
+                if (config.storageBucket) bucketName = config.storageBucket
+            }
+        } catch (e) { }
+
+        try {
+            const bucket = admin.storage().bucket(bucketName)
+            if (filePath && bucket) {
+                const file = bucket.file(filePath)
+                const [exists] = await file.exists()
+                if (exists) {
+                    console.log(`[View] Streaming from Bucket: ${filePath}`)
+                    // Create read stream and pipe to res
+                    return file.createReadStream().pipe(res)
+                }
+            }
+        } catch (e) {
+            console.warn("[View] Bucket stream failed:", e.message)
+        }
+
+        console.error(`[View] File missing on disk and cloud: ${filePath}`)
+        res.status(404).send('File not found (Server Storage)')
+
+    } catch (err) {
+        console.error('[View] Error:', err)
+        res.status(500).send('Internal Server Error')
+    }
+})
+
+// 2. View Document Version File (Inline with Clean Name)
+app.get(['/api/docview/versions/:versionId/:filename', '/api/docview/versions/:versionId'], async (req, res) => {
+    try {
+        const { versionId } = req.params
+        console.log(`[App.js View Version] Request for version id: ${versionId}`)
+
+        const query = `
+            SELECT v.file_path, v.file_content, d.name, v.version
+            FROM document_versions v
+            JOIN documents d ON v.document_id = d.id
+            WHERE v.id = $1
+        `
+        const resDb = await pool.query(query, [versionId])
+
+        if (resDb.rows.length === 0) return res.status(404).send('Version not found')
+
+        const row = resDb.rows[0];
+        const filePath = row.file_path
+        const fileContent = row.file_content
+        const docName = row.name || 'Document'
+        const version = row.version
+
+        let mimeType = 'application/octet-stream'
+        const ext = path.extname(filePath || docName).toLowerCase()
+        if (ext === '.pdf') mimeType = 'application/pdf'
+        else if (ext === '.png') mimeType = 'image/png'
+        else if (ext === '.jpg' || ext === '.jpeg') mimeType = 'image/jpeg'
+
+        let safeName = docName.replace(/[^a-zA-Z0-9가-힣\s\-_.]/g, '').trim()
+        if (!safeName) safeName = 'document'
+        const requestedFilename = req.params.filename ? decodeURIComponent(req.params.filename) : null
+        const defaultFilename = `${safeName}_${version}${ext}`
+        const finalFilename = requestedFilename || defaultFilename
+        const encodedName = encodeURIComponent(finalFilename)
+
+        res.setHeader('Content-Type', mimeType)
+        res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodedName}`)
+
+        // 1. Try DB Content (Base64)
+        if (fileContent) {
+            const buffer = Buffer.from(fileContent, 'base64')
+            console.log(`[View Version] Serving from DB: ${buffer.length} bytes`)
+            return res.send(buffer)
+        }
+
+        // 2. Fallback to Disk
+        if (!filePath) return res.status(404).send('File path missing')
+
+        let safeFullPath = path.join(uploadsDir, path.basename(filePath))
+
+        // 3. Bucket logic for versions (missing in server/index.js but needed?)
+        // The original server/index.js didn't have Bucket logic in ViewVersion? 
+        // Let's add it for robustness, similar to View Doc.
+
+        // If file_path is like "documents/...", it might be GCS. 
+        if (filePath.includes('/')) {
+            const admin = require('firebase-admin')
+            if (!admin.apps.length) admin.initializeApp()
+            let bucketName = 'crossmanager-1e21c.firebasestorage.app'
+            try {
+                if (process.env.FIREBASE_CONFIG) {
+                    const config = JSON.parse(process.env.FIREBASE_CONFIG)
+                    if (config.storageBucket) bucketName = config.storageBucket
+                }
+            } catch (e) { }
+
+            try {
+                const bucket = admin.storage().bucket(bucketName)
+                const file = bucket.file(filePath)
+                const [exists] = await file.exists()
+                if (exists) {
+                    return file.createReadStream().pipe(res)
+                }
+            } catch (e) { }
+        } else {
+            // Local Check
+            if (fs.existsSync(safeFullPath)) {
+                return res.sendFile(safeFullPath)
+            }
+        }
+
+        res.status(404).send('File not found on server disk or cloud')
+
+    } catch (err) {
+        console.error('[View Version] Error:', err)
+        res.status(500).send('Server Error')
+    }
+})
+
 // Documents Router MUST be mounted BEFORE body parsers (json/urlencoded)
 // so that Multer can handle multipart/form-data streams first.
 const documentsRouter = createDocumentsRouter(pool, uploadsDir)
