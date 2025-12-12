@@ -231,7 +231,46 @@ CREATE TABLE report_approvals (
 ```
 
 ### 5.3 개발 로드맵
-1.  **Phase 1: 기반 구축** - DB 설계, 템플릿 엔진, 기본 일일보고 시스템 구현.
-2.  **Phase 2: 모듈 연동** - PMS/SMS/SWMS/EMS 데이터 집계 연동.
-3.  **Phase 3: 워크플로우 & UI** - 승인 결재선, 리포트 에디터/뷰어 구현.
-4.  **Phase 4: 고도화** - 대시보드, AI 분석 기능(Phase II) 준비.
+1.  **Phase 1: 기반 구축 (✅ 완료 - 2025-12-12)** 
+    - ✅ DB 설계 (reports, report_templates 테이블)
+    - ✅ 기본 일일/주간/월간 보고 시스템 구현
+    - ✅ 보고서 목록/상세 UI (List + Modal 구조)
+    - ✅ 보고서 생성/수정/삭제 기능
+    - ✅ 보고서 뷰어/에디터 컴포넌트
+    - ✅ Firebase Functions API 연동
+    - ✅ 자동 데이터 집계 (PMS/SMS/EMS/SWMS)
+    
+2.  **Phase 2: 워크플로우 고도화 (진행 예정)**
+    - [ ] 승인 결재선 구현
+    - [ ] 보고서 상태 관리 강화
+    - [ ] 임원용 대시보드
+    - [ ] 보고서 배포 기능
+    
+3.  **Phase 3: 템플릿 및 포맷팅**
+    - [ ] 고객사별 템플릿 관리
+    - [ ] PDF/Word 내보내기
+    - [ ] 자동 변환 기능 (tech_memo_conversion.md 참조)
+    
+4.  **Phase 4: AI 고도화 (Phase II)**
+    - [ ] AI 기반 문장 자동 요약
+    - [ ] 위험 패턴 분석
+    - [ ] 장비 예지정비 분석
+
+---
+
+## 6. 최근 업데이트 이력
+
+### 2025-12-12 (Phase 1 완료)
+**구현 완료:**
+- Reports 페이지 UI 개선 (녹색 버튼, 문서 아이콘, 네온 그림자)
+- 보고서 삭제 기능 추가
+- Firebase Functions에 Reports API 통합
+- Reports 테이블 자동 초기화
+- Linting 오류 수정 및 코드 정리
+- 프론트엔드/백엔드 배포 완료
+
+**다음 단계:**
+- 임원용 대시보드 구현
+- 승인 프로세스 E2E 테스트
+- 자동 보고서 변환 기능 (Phase 1 - tech_memo_conversion.md)
+
