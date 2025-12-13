@@ -1,27 +1,44 @@
 /* Print Styles for Report Modal */
 @media print {
 
-    /* Hide everything except report content */
-    body * {
-        visibility: hidden;
+    /* Hide modal overlay and chrome */
+    .modal-overlay {
+        background: none !important;
+        backdrop-filter: none !important;
     }
 
-    #report-content-for-pdf,
-    #report-content-for-pdf * {
-        visibility: visible;
+    .modal-content {
+        border: none !important;
+        box-shadow: none !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        height: auto !important;
+        background: white !important;
+    }
+
+    /* Hide header and footer */
+    .modal-header,
+    .modal-footer {
+        display: none !important;
+    }
+
+    /* Show only the body content */
+    .modal-body {
+        padding: 0 !important;
+        overflow: visible !important;
+        background: white !important;
     }
 
     #report-content-for-pdf {
-        position: absolute;
-        left: 0;
-        top: 0;
-        width: 100%;
+        width: 100% !important;
         background: white !important;
         color: black !important;
     }
 
     /* Page break control */
-    .report-section {
+    .report-section,
+    .card,
+    .panel {
         page-break-inside: avoid;
     }
 
@@ -35,19 +52,29 @@
     canvas {
         max-width: 100% !important;
         height: auto !important;
-    }
-
-    /* Hide modal overlay and buttons */
-    .modal-overlay,
-    .modal-header,
-    .modal-footer,
-    button {
-        display: none !important;
+        page-break-inside: avoid;
     }
 
     /* Adjust margins for print */
     @page {
         margin: 2cm;
         size: A4;
+    }
+
+    /* Hide all buttons */
+    button {
+        display: none !important;
+    }
+
+    /* Ensure text is black */
+    * {
+        color: black !important;
+    }
+
+    /* Keep background colors for badges and status */
+    .badge,
+    .status-badge {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
     }
 }
