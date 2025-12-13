@@ -2,8 +2,7 @@ import { useState, useEffect } from 'react'
 import { X, Send, Check, AlertCircle, Download } from 'lucide-react'
 import ReportViewer from './ReportViewer'
 import ReportEditor from './ReportEditor'
-import jsPDF from 'jspdf'
-import html2canvas from 'html2canvas'
+import './ReportPrint.css'
 
 interface ReportModalProps {
     mode: 'VIEW' | 'CREATE' | 'EDIT'
@@ -21,7 +20,6 @@ export default function ReportModal({ mode, report, isOpen, onClose, onSave, onS
     const [isEditing, setIsEditing] = useState(mode === 'EDIT' || mode === 'CREATE')
     const [comment, setComment] = useState('')
     const [showRejectForm, setShowRejectForm] = useState(false)
-    const [isGeneratingPDF, setIsGeneratingPDF] = useState(false)
 
     const [draftContent, setDraftContent] = useState<any>(null)
 
@@ -37,63 +35,10 @@ export default function ReportModal({ mode, report, isOpen, onClose, onSave, onS
     const isPending = status === 'PENDING'
     const isApproved = status === 'APPROVED'
 
-    const handlePrintAsPDF = async () => {
-        const element = document.getElementById('report-content-for-pdf')
-        if (!element) {
-            alert('보고서 내용을 찾을 수 없습니다.')
-            return
-        }
-
-        setIsGeneratingPDF(true)
-
-        try {
-            // HTML을 Canvas로 변환
-            const canvas = await html2canvas(element, {
-                scale: 2, // 고해상도
-                useCORS: true,
-                logging: false,
-                backgroundColor: '#ffffff', // PDF는 흰 배경
-                windowWidth: element.scrollWidth,
-                windowHeight: element.scrollHeight
-            })
-
-            const imgData = canvas.toDataURL('image/png')
-
-            // PDF 생성 (A4)
-            const pdf = new jsPDF({
-                orientation: 'portrait',
-                unit: 'mm',
-                format: 'a4'
-            })
-
-            const imgWidth = 210 // A4 width
-            const pageHeight = 297 // A4 height
-            const imgHeight = (canvas.height * imgWidth) / canvas.width
-            let heightLeft = imgHeight
-            let position = 0
-
-            // 첫 페이지
-            pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
-            heightLeft -= pageHeight
-
-            // 추가 페이지
-            while (heightLeft >= 0) {
-                position = heightLeft - imgHeight
-                pdf.addPage()
-                pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
-                heightLeft -= pageHeight
-            }
-
-            // PDF 저장
-            const fileName = `${report?.title || '보고서'}_${new Date().toISOString().slice(0, 10)}.pdf`
-            pdf.save(fileName)
-
-        } catch (error) {
-            console.error('PDF 생성 실패:', error)
-            alert('PDF 생성에 실패했습니다.')
-        } finally {
-            setIsGeneratingPDF(false)
-        }
+    const handlePrintAsPDF = () => {
+        // 브라우저 인쇄 대화상자 열기
+        // 사용자가 "PDF로 저장" 선택 가능
+        window.print()
     }
 
     const handleSubmit = () => {
@@ -198,7 +143,6 @@ export default function ReportModal({ mode, report, isOpen, onClose, onSave, onS
                         {!isEditing && (
                             <button
                                 onClick={handlePrintAsPDF}
-                                disabled={isGeneratingPDF}
                                 style={{
                                     display: 'flex',
                                     gap: '0.5rem',
@@ -211,11 +155,10 @@ export default function ReportModal({ mode, report, isOpen, onClose, onSave, onS
                                     color: '#fff',
                                     fontSize: '1rem',
                                     fontWeight: 600,
-                                    cursor: isGeneratingPDF ? 'wait' : 'pointer',
-                                    opacity: isGeneratingPDF ? 0.6 : 1
+                                    cursor: 'pointer'
                                 }}
                             >
-                                <Download size={16} /> {isGeneratingPDF ? 'PDF 생성 중...' : 'PDF 다운로드'}
+                                <Download size={16} /> PDF 인쇄/저장
                             </button>
                         )}
                     </div>

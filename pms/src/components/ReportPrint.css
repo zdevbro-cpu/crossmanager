@@ -1,0 +1,53 @@
+/* Print Styles for Report Modal */
+@media print {
+
+    /* Hide everything except report content */
+    body * {
+        visibility: hidden;
+    }
+
+    #report-content-for-pdf,
+    #report-content-for-pdf * {
+        visibility: visible;
+    }
+
+    #report-content-for-pdf {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        background: white !important;
+        color: black !important;
+    }
+
+    /* Page break control */
+    .report-section {
+        page-break-inside: avoid;
+    }
+
+    h1,
+    h2,
+    h3 {
+        page-break-after: avoid;
+    }
+
+    /* Ensure charts/graphs are visible */
+    canvas {
+        max-width: 100% !important;
+        height: auto !important;
+    }
+
+    /* Hide modal overlay and buttons */
+    .modal-overlay,
+    .modal-header,
+    .modal-footer,
+    button {
+        display: none !important;
+    }
+
+    /* Adjust margins for print */
+    @page {
+        margin: 2cm;
+        size: A4;
+    }
+}
