@@ -39,7 +39,7 @@ export default function ReportModal({ mode, report, isOpen, onClose, onSave, onS
     }
 
     const handleSubmit = () => {
-        if (confirm('보고서를 결재 상신하시겠습니까?')) {
+        if (confirm('결재를 진행하시겠습니까?')) {
             onStatusChange?.(report.id, 'PENDING')
             onClose()
         }
@@ -203,16 +203,34 @@ export default function ReportModal({ mode, report, isOpen, onClose, onSave, onS
                                                     className="input-sm"
                                                     style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.12)', color: '#fff' }}
                                                 />
-                                                <button className="btn-danger" onClick={handleReject}>확인</button>
-                                                <button className="btn-secondary" onClick={() => setShowRejectForm(false)}>취소</button>
+                                                <button style={{
+                                                    height: '42px', padding: '0 1.5rem', borderRadius: '10px',
+                                                    background: '#1e293b', border: '1px solid rgba(255,255,255,0.12)',
+                                                    color: '#fff', fontSize: '1rem', fontWeight: 600, cursor: 'pointer'
+                                                }} onClick={handleReject}>확인</button>
+                                                <button style={{
+                                                    height: '42px', padding: '0 1.5rem', borderRadius: '10px',
+                                                    background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)',
+                                                    color: '#fff', fontSize: '1rem', fontWeight: 600, cursor: 'pointer'
+                                                }} onClick={() => setShowRejectForm(false)}>취소</button>
                                             </div>
                                         ) : (
-                                            <button className="btn-danger" onClick={() => setShowRejectForm(true)}>
+                                            <button style={{
+                                                height: '42px', padding: '0 1.5rem', borderRadius: '10px',
+                                                background: '#1e293b', border: '1px solid rgba(255,255,255,0.12)',
+                                                color: '#fff', fontSize: '1rem', fontWeight: 600,
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer'
+                                            }} onClick={() => setShowRejectForm(true)}>
                                                 <AlertCircle size={16} style={{ marginRight: '8px' }} /> 반려
                                             </button>
                                         )}
 
-                                        <button className="btn-success" onClick={handleApprove}>
+                                        <button style={{
+                                            height: '42px', padding: '0 1.5rem', borderRadius: '10px',
+                                            background: '#1e293b', border: '1px solid rgba(255,255,255,0.12)',
+                                            color: '#fff', fontSize: '1rem', fontWeight: 600,
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer'
+                                        }} onClick={handleApprove}>
                                             <Check size={16} style={{ marginRight: '8px' }} /> 승인
                                         </button>
                                     </>
