@@ -151,7 +151,13 @@ function ContractsPage() {
         riskRate: data.riskRate || data.risk_rate || 10,
         marginRate: data.marginRate || data.margin_rate || 15,
         regulationConfig: data.regulationConfig || data.regulation_config,
-        projectId: data.projectId || data.project_id
+        projectId: data.projectId || data.project_id,
+        // Handle attachment from Firebase Storage
+        attachment: data.attachment_path ? {
+          name: data.attachment_name || data.attachmentName || 'attachment',
+          url: data.attachmentUrl || '', // Signed URL from backend
+          size: data.attachment_size || data.attachmentSize || 0
+        } : data.attachment
       })
 
       const backendItems = data.items || []
@@ -167,6 +173,7 @@ function ContractsPage() {
         paddedItems.push({ group: '', name: '', spec: '', quantity: 0, unit: '식', unitPrice: 0, amount: 0 })
       }
       setItems(paddedItems)
+      setAttachmentFile(null) // Clear file state when editing existing
     } catch (err) {
       console.error(err)
       show('계약 상세 정보를 불러오는데 실패했습니다.', 'error')
@@ -201,18 +208,69 @@ function ContractsPage() {
       // Filter empty items
       const validItems = items.filter(i => i.name && i.name.trim() !== '')
 
-      const payload = {
-        ...form,
-        items: validItems
+      // If file is attached, use FormData
+      if (attachmentFile) {
+        const formData = new FormData()
+
+        // Add file
+        formData.append('file', attachmentFile)
+
+        // Add all form fields
+        formData.append('projectId', form.projectId || '')
+        formData.append('type', form.type || 'CONTRACT')
+        formData.append('category', form.category || 'NEW')
+        formData.append('name', form.name || '')
+        formData.append('status', form.status || 'DRAFT')
+
+        if (form.totalAmount !== undefined) formData.append('totalAmount', String(form.totalAmount))
+        if (form.costDirect !== undefined) formData.append('costDirect', String(form.costDirect))
+        if (form.costIndirect !== undefined) formData.append('costIndirect', String(form.costIndirect))
+        if (form.riskFee !== undefined) formData.append('riskFee', String(form.riskFee))
+        if (form.margin !== undefined) formData.append('margin', String(form.margin))
+        if (form.indirectRate !== undefined) formData.append('indirectRate', String(form.indirectRate))
+        if (form.riskRate !== undefined) formData.append('riskRate', String(form.riskRate))
+        if (form.marginRate !== undefined) formData.append('marginRate', String(form.marginRate))
+
+        if (form.regulationConfig) formData.append('regulationConfig', JSON.stringify(form.regulationConfig))
+        if (form.clientManager) formData.append('clientManager', form.clientManager)
+        if (form.ourManager) formData.append('ourManager', form.ourManager)
+        if (form.contractDate) formData.append('contractDate', form.contractDate)
+        if (form.startDate) formData.append('startDate', form.startDate)
+        if (form.endDate) formData.append('endDate', form.endDate)
+        if (form.termsPayment) formData.append('termsPayment', form.termsPayment)
+        if (form.termsPenalty) formData.append('termsPenalty', form.termsPenalty)
+
+        formData.append('items', JSON.stringify(validItems))
+
+        // Send multipart request
+        if (editingId) {
+          await apiClient.put(`/contracts/${editingId}`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+          })
+          show('수정되었습니다.', 'success')
+        } else {
+          await apiClient.post('/contracts', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+          })
+          show('생성되었습니다.', 'success')
+        }
+      } else {
+        // Regular JSON request (no file)
+        const payload = {
+          ...form,
+          items: validItems
+        }
+
+        if (editingId) {
+          await updateContract({ ...payload, id: editingId } as Contract)
+          show('수정되었습니다.', 'success')
+        } else {
+          await createContract(payload as Contract)
+          show('생성되었습니다.', 'success')
+        }
       }
 
-      if (editingId) {
-        await updateContract({ ...payload, id: editingId } as Contract)
-        show('수정되었습니다.', 'success')
-      } else {
-        await createContract(payload as Contract)
-        show('생성되었습니다.', 'success')
-      }
+      setAttachmentFile(null)
       handleReset()
     } catch (err: any) {
       console.error(err)
@@ -232,6 +290,8 @@ function ContractsPage() {
     }
   }
 
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null)
+
   const handleFileChange = () => {
     const input = document.createElement('input')
     input.type = 'file'
@@ -239,20 +299,16 @@ function ContractsPage() {
     input.onchange = (e: any) => {
       const file = e.target.files[0]
       if (file) {
-        const reader = new FileReader()
-        reader.onload = (readerEvent) => {
-          const base64 = readerEvent.target?.result as string
-          setForm(prev => ({
-            ...prev,
-            attachment: {
-              name: file.name,
-              url: base64, // Persist base64
-              size: file.size
-            }
-          }))
-          show('파일이 첨부되었습니다.', 'success')
-        }
-        reader.readAsDataURL(file)
+        setAttachmentFile(file)
+        setForm(prev => ({
+          ...prev,
+          attachment: {
+            name: file.name,
+            url: '', // Will be filled after upload
+            size: file.size
+          }
+        }))
+        show('파일이 선택되었습니다.', 'success')
       }
     }
     input.click()

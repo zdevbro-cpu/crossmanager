@@ -80,7 +80,10 @@
    - POST `/api/contracts` 파일 업로드 지원
    - PUT `/api/contracts/:id` 파일 업데이트 지원
    - GET `/api/contracts/:id` Signed URL 반환
-4. ⏳ Frontend 파일 업로드 로직 수정 (대기 중)
+4. ✅ Frontend 파일 업로드 로직 수정 (완료 - 2025-12-13)
+   - File 객체 상태 관리 (`attachmentFile`)
+   - FormData 방식으로 파일 전송
+   - Signed URL 기반 파일 다운로드
 5. ⏳ 테스트 및 배포 (대기 중)
 
 **상세 계획**: `implementation_plan.md` 참조
@@ -94,8 +97,16 @@
 - ✅ Signed URL 생성 (1시간 만료)
 - ✅ 기존 JSONB `attachment` 필드 유지 (하위 호환성)
 
+**Frontend (`pms/src/pages/Contracts.tsx`):**
+- ✅ 파일 선택 UI (기존 유지)
+- ✅ File 객체 상태 관리
+- ✅ FormData 생성 및 전송
+- ✅ Signed URL 기반 파일 열기/다운로드
+- ✅ 편집 시 기존 첨부파일 표시
+
 **다음 단계:**
-- Frontend 파일 업로드 UI 추가
-- 로컬 테스트 후 배포
+- 로컬 테스트 (파일 업로드/다운로드)
+- Firebase Functions 배포
+- 프로덕션 테스트
 
 
