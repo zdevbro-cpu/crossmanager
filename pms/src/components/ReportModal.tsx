@@ -228,7 +228,7 @@ export default function ReportModal({ mode, report, isOpen, onClose, onSave, onS
                                         <button style={{
                                             height: '42px', padding: '0 1.5rem', borderRadius: '10px',
                                             background: '#1e293b', border: '1px solid rgba(255,255,255,0.12)',
-                                            color: '#fff', fontSize: '1rem', fontWeight: 600,
+                                            color: '#4ea1ff', fontSize: '1rem', fontWeight: 600,
                                             display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer'
                                         }} onClick={handleApprove}>
                                             <Check size={16} style={{ marginRight: '8px' }} /> 승인
