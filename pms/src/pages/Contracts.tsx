@@ -389,24 +389,36 @@ function ContractsPage() {
       // Contract or Attachment Exists
       if (contractToPrint.attachment?.url) {
         const blobUrl = openBlobUrl(contractToPrint.attachment.url)
-        const win = window.open()
-        if (win) {
-          win.document.write(`
-            <html><body style="margin:0">
-              <iframe id="pdfFrame" src="${blobUrl}" frameborder="0" style="border:0; top:0px; left:0px; bottom:0px; right:0px; width:100%; height:100%;" allowfullscreen></iframe>
-              <script>
-                document.getElementById('pdfFrame').onload = function() {
-                  setTimeout(function() {
-                    try {
-                      document.getElementById('pdfFrame').contentWindow.print();
-                    } catch(e) { console.error('Auto-print error:', e); }
-                  }, 500);
-                };
-              </script>
-            </body></html>
-          `)
-          win.document.close()
+        const iframe = document.createElement('iframe')
+        iframe.style.position = 'fixed'
+        iframe.style.right = '0'
+        iframe.style.bottom = '0'
+        iframe.style.width = '0'
+        iframe.style.height = '0'
+        iframe.style.border = '0'
+        iframe.src = blobUrl
+
+        iframe.onload = () => {
+          try {
+            const win = iframe.contentWindow
+            if (!win) throw new Error('iframe window not available')
+
+            const cleanup = () => {
+              URL.revokeObjectURL(blobUrl)
+              iframe.remove()
+            }
+
+            win.addEventListener('afterprint', cleanup)
+            win.focus()
+            win.print()
+            setTimeout(cleanup, 15000) // fallback
+          } catch (err) {
+            console.error('Auto print failed:', err)
+            show('인쇄창을 열지 못했습니다. 팝업 차단을 확인하세요.', 'error')
+          }
         }
+
+        document.body.appendChild(iframe)
       } else if (contractToPrint.attachment?.name) {
         show(`파일을 찾을 수 없습니다: ${contractToPrint.attachment.name}`, 'error')
       } else {

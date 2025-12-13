@@ -108,12 +108,14 @@ const dbConfig = {
 }
 
 // Connection preference:
-// 1) Cloud SQL Unix socket if INSTANCE_CONNECTION_NAME 제공 (서버리스 VPC 없이 접근 가능)
-// 2) TCP(DB_HOST) 필요시 사용. FORCE_TCP=true 설정 시 소켓 대신 TCP 강제.
-// Force Cloud SQL Unix Socket connection (User confirmed this worked previously)
-// Instance Connection Name MUST match the source project (480401), not the deploy project (1e21c)
-if (true) {
-    dbConfig.host = '/cloudsql/crossmanager-480401:asia-northeast3:crossmanager'
+// 1) Cloud SQL Unix socket on GCP or when USE_CLOUD_SQL_SOCKET=true
+// 2) TCP(DB_HOST) locally or when FORCE_TCP=true
+const runningOnGcp = !!(process.env.K_SERVICE || process.env.FUNCTION_TARGET)
+const preferSocket = process.env.FORCE_TCP !== 'true' && (process.env.USE_CLOUD_SQL_SOCKET === 'true' || runningOnGcp)
+const instance = process.env.INSTANCE_CONNECTION_NAME || 'crossmanager-480401:asia-northeast3:crossmanager'
+
+if (preferSocket && instance) {
+    dbConfig.host = `/cloudsql/${instance}`
 } else if (process.env.DB_HOST) {
     dbConfig.host = process.env.DB_HOST
     dbConfig.port = process.env.DB_PORT || 5432

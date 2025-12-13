@@ -58,6 +58,7 @@ app.get('/api/file-proxy/:filename', (req, res) => {
 // Routes
 const contractsRouter = require('./routes/contracts')
 const { createDocumentsRouter } = require('./routes/documents')
+const { createDashboardRouter } = require('./routes/dashboard')
 
 
 app.get('/api/test', (req, res) => res.json({ msg: 'Test works' }))
@@ -344,6 +345,7 @@ app.get(['/api/docview/versions/:versionId/:filename', '/api/docview/versions/:v
 
 app.use('/api/contracts', contractsRouter)
 app.use('/api/documents', createDocumentsRouter(pool, uploadsDir))
+app.use('/api/dashboard', createDashboardRouter(pool))
 app.use('/api/reports', require('./routes/reports')(pool))
 app.use('/api/sms/checklists', require('./routes/sms_checklists')(pool))
 app.use('/api/ems', require('./routes/ems_summary')(pool))
