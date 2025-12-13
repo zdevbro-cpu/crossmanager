@@ -1,4 +1,5 @@
 
+import { Link } from 'react-router-dom'
 import '../pages/Page.css'
 import { AlertTriangle, ExternalLink } from 'lucide-react'
 
@@ -23,7 +24,7 @@ const getTitle = (type?: string) => {
     }
 }
 
-export default function ReportViewer({ data, title }: { data: any, title?: string }) {
+export default function ReportViewer({ data, title, projectId }: { data: any, title?: string, projectId?: string }) {
     const content = data as ReportContent
     if (!content || !content.pms) return <div className="muted" style={{ padding: '2rem', textAlign: 'center' }}>데이터 구조가 올바르지 않습니다.</div>
 
@@ -37,39 +38,36 @@ export default function ReportViewer({ data, title }: { data: any, title?: strin
         }}>
             <div className="report-header-section">
                 <h3 className="report-title">{title || getTitle(content.type)}</h3>
-                <div className="report-meta-grid">
-                    <div className="meta-item">
-                        <span className="label">날씨</span>
-                        <span className="value">{content.weather || '-'}</span>
+                <div style={{ display: 'flex', justifyContent: 'center', gap: '4rem', marginTop: '2rem', marginBottom: '1.5rem' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                        <span style={{ fontSize: '0.9rem', color: '#94a3b8' }}>날씨</span>
+                        <span style={{ fontSize: '1.1rem', fontWeight: 500, color: '#e2e8f0' }}>{content.weather || '-'}</span>
                     </div>
-                    <div className="meta-item">
-                        <span className="label">안전등급</span>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                        <span style={{ fontSize: '0.9rem', color: '#94a3b8' }}>안전등급</span>
                         {(() => {
-                            const status = content.sms?.safetyStatus || '미집계'; // Default value handling
-                            let color = '#3b82f6'; // Default Blue
-                            if (status === 'SAFE') color = '#10b981'; // Green
-                            else if (status === 'WARNING') color = '#f59e0b'; // Orange
-                            else if (status === 'ACCIDENT') color = '#ef4444'; // Red
+                            const status = content.sms?.safetyStatus || '미집계'
+                            let color = '#3b82f6'
+                            if (status === 'SAFE') color = '#10b981'
+                            else if (status === 'WARNING') color = '#f59e0b'
+                            else if (status === 'ACCIDENT') color = '#ef4444'
 
                             return (
                                 <span style={{
-                                    padding: '0.4rem 0.8rem',
-                                    borderRadius: '10px',
-                                    background: `${color}1a`, // 10% opacity
-                                    border: `1px solid ${color}`,
-                                    boxShadow: `0 0 8px ${color}33`, // 20% opacity
-                                    color: color,
-                                    fontSize: '0.9rem',
-                                    fontWeight: 600
+                                    padding: '0.2rem 0.8rem', borderRadius: '8px',
+                                    border: `1px solid ${color}`, color: color,
+                                    fontSize: '1rem', fontWeight: 600,
+                                    background: `${color}10`,
+                                    boxShadow: `0 0 10px ${color}20`
                                 }}>
                                     {status}
                                 </span>
-                            );
+                            )
                         })()}
                     </div>
-                    <div className="meta-item">
-                        <span className="label">작성일</span>
-                        <span className="value">{new Date().toLocaleDateString()}</span>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                        <span style={{ fontSize: '0.9rem', color: '#94a3b8' }}>작성일</span>
+                        <span style={{ fontSize: '1.1rem', fontWeight: 500, color: '#e2e8f0' }}>{new Date().toLocaleDateString()}</span>
                     </div>
                 </div>
             </div>
@@ -78,7 +76,7 @@ export default function ReportViewer({ data, title }: { data: any, title?: strin
 
             {/* 1. Summary */}
             <div className="report-section">
-                <h4>1. 금일 작업을 요약</h4>
+                <h4>1. 금일 작업 요약</h4>
                 <div className="box-text">
                     {content.summary || '요약 정보 없음'}
                 </div>
@@ -88,7 +86,9 @@ export default function ReportViewer({ data, title }: { data: any, title?: strin
             <div className="report-section">
                 <h4 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                     2. 공정 현황 (진행 중: {content.pms?.totalActive ?? 0}건)
-                    <a href="/pms" target="_blank" className="link-muted" style={{ fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '2px' }}>PMS 상세 <ExternalLink size={12} /></a>
+                    <Link to={projectId ? `/projects/${projectId}` : '/projects'} target="_blank" className="link-muted" style={{ fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '2px', textDecoration: 'none' }}>
+                        PMS 상세 <ExternalLink size={12} />
+                    </Link>
                 </h4>
                 <div className="simple-table-col">
                     {content.pms?.activeTasks?.map((t, i) => {

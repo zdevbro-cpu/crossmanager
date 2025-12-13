@@ -158,6 +158,22 @@ PMS는 모든 모듈의 요약 데이터를 받아 다음 보고서를 생성한
 
 ## 5. 아키텍처 및 개발 계획 (Architecture & Roadmap)
 
+### 5.0 로컬 개발 시 배포 API 사용(A안)
+문서/보고서처럼 **파일 저장소(Firebase Storage)** 와 **DB** 가 연결된 기능은 로컬에서 업로드하면 배포에서 파일을 못 찾는 문제가 생길 수 있습니다.  
+로컬에서도 운영과 동일하게 확인하려면, **로컬 PMS가 배포 API를 호출**하도록 설정하는 것이 가장 단순합니다.
+
+- 설정 파일: `pms/.env.development.local` (예시는 `pms/.env.development.example`)
+- 권장 값: `VITE_API_PROXY_TARGET=https://crossmanager.web.app`
+- 실행: `npm -C pms run dev` (이후 `/api/**` 요청이 배포 API로 프록시됨)
+
+로컬 서버로 다시 돌리고 싶으면 아래처럼 설정하면 됩니다.
+- `VITE_API_PROXY_TARGET=http://localhost:3007`
+
+이미 로컬 서버(3007)에서 업로드해 DB에만 남아버린 파일 때문에 배포에서 파일을 못 찾는 경우,
+`Server/uploads`에 파일이 남아있다면 아래 백필 스크립트로 버킷 업로드 후 경로를 정리할 수 있습니다.
+- DRY RUN: `node Server/backfill_local_uploads_to_bucket.js`
+- 실행: `RUN=1 node Server/backfill_local_uploads_to_bucket.js`
+
 ### 5.1 시스템 아키텍처 (Conceptual)
 ```mermaid
 graph TD
@@ -274,3 +290,25 @@ CREATE TABLE report_approvals (
 - 승인 프로세스 E2E 테스트
 - 자동 보고서 변환 기능 (Phase 1 - tech_memo_conversion.md)
 
+### 2025-12-13 (문서/계약 첨부 안정화)
+**개선 사항:**
+- 일일보고서 AI 요약을 4줄 불릿 형태로 고정 출력(서버/Functions 공통)
+  - `* 금일 N건 작업진행`
+  - `* 작업지연 N건 발생` 또는 `없음`
+  - `* TBM/DRI 시행 없음` 또는 `: N건`
+  - `* 안전사고 발생 : N건`
+- 결재 모달 `승인` 버튼: 모달 배경과 같은 어두운 청색 톤으로 변경
+- 목록 `결재중` 배지: 어두운 청색 바탕 + 하늘색(형광) 글씨로 변경
+- 문서관리 인쇄/미리보기 로직 보완
+  - `document_versions.file_content` 컬럼 자동 보완(없으면 `ALTER TABLE ... IF NOT EXISTS`)
+  - Storage 버킷명을 `.firebasestorage.app` → `.appspot.com`으로 정규화하여 환경별 버킷 불일치 제거
+  - 버킷 업로드 실패 시 DB(Base64)로 폴백 저장 후, 조회 시 DB에서 바로 내려주는 방식 지원
+- 계약/견적(첨부)도 문서관리와 동일 로직으로 통일
+  - `contracts.attachment_content`, `contracts.attachment_mime_type` 추가 및 `/api/contracts/:id/attachment` 제공
+
+**개발(A안) 권장:**
+- 로컬 PMS는 `/api`를 배포 서버로 프록시하여 “로컬 업로드 파일이 배포에서만 안 보이는 문제”를 원천 차단
+  - 예시: `pms/.env.development.local`에 `VITE_API_PROXY_TARGET=https://crossmanager.web.app`
+
+**배포:**
+- Hosting: https://crossmanager.web.app

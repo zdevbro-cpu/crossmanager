@@ -5,11 +5,48 @@ const fs = require('fs')
 const admin = require('firebase-admin')
 const { validate: isUuid } = require('uuid')
 
+function resolveBucketName() {
+    if (process.env.FIREBASE_STORAGE_BUCKET) return process.env.FIREBASE_STORAGE_BUCKET
+
+    try {
+        if (process.env.FIREBASE_CONFIG) {
+            const config = JSON.parse(process.env.FIREBASE_CONFIG)
+            if (config.storageBucket) {
+                const bucket = String(config.storageBucket)
+                return bucket.endsWith('.firebasestorage.app')
+                    ? bucket.replace(/\.firebasestorage\.app$/, '.appspot.com')
+                    : bucket
+            }
+        }
+    } catch (e) { }
+
+    try {
+        const serviceAccountPath = path.join(__dirname, '..', 'serviceAccountKey.json')
+        if (fs.existsSync(serviceAccountPath)) {
+            const serviceAccount = require(serviceAccountPath)
+            if (serviceAccount?.project_id) return `${serviceAccount.project_id}.appspot.com`
+        }
+    } catch (e) { }
+
+    return 'crossmanager-1e21c.appspot.com'
+}
+
 // Initialize Firebase Admin if not already initialized
 if (!admin.apps.length) {
     // Try with warning if no credentials
     try {
-        admin.initializeApp()
+        const bucketName = resolveBucketName()
+        const serviceAccountPath = path.join(__dirname, '..', 'serviceAccountKey.json')
+
+        if (fs.existsSync(serviceAccountPath)) {
+            const serviceAccount = require(serviceAccountPath)
+            admin.initializeApp({
+                credential: admin.credential.cert(serviceAccount),
+                storageBucket: bucketName
+            })
+        } else {
+            admin.initializeApp({ storageBucket: bucketName })
+        }
     } catch (e) {
         console.warn("Firebase Init Error (might lack credentials):", e.message)
     }
@@ -17,13 +54,7 @@ if (!admin.apps.length) {
 
 // Determine bucket name from env or fallback
 // Note: In Cloud Functions Gen 2, FIREBASE_CONFIG might be present.
-let bucketName = 'crossmanager-1e21c.firebasestorage.app' // Standard Firebase bucket
-try {
-    if (process.env.FIREBASE_CONFIG) {
-        const config = JSON.parse(process.env.FIREBASE_CONFIG)
-        if (config.storageBucket) bucketName = config.storageBucket
-    }
-} catch (e) { }
+let bucketName = resolveBucketName()
 
 // Forcing explicit bucket name to avoid "bucket not found"
 console.log('Using Storage Bucket:', bucketName)
@@ -126,6 +157,7 @@ const createDocumentsRouter = (pool, uploadsDir) => {
             const destination = `documents/${pId || 'global'}/${file.filename}`
             let dbFilePath = destination
             let uploadedToCloud = false
+            let fileContentBase64 = null
 
             if (bucket) {
                 try {
@@ -146,7 +178,12 @@ const createDocumentsRouter = (pool, uploadsDir) => {
             if (!uploadedToCloud) {
                 // console.warn("Skipping Storage Upload or Failed, keeping file locally.")
                 dbFilePath = file.filename
-                // Do NOT unlink file.path
+                try {
+                    fileContentBase64 = fs.readFileSync(file.path).toString('base64')
+                    try { fs.unlinkSync(file.path) } catch (e) { }
+                } catch (e) {
+                    console.warn('Failed to read local file for DB fallback:', e.message)
+                }
             }
             // ----------------------------------
             // ----------------------------------
@@ -166,9 +203,9 @@ const createDocumentsRouter = (pool, uploadsDir) => {
             // Insert into document_versions table
             await client.query(`
         INSERT INTO document_versions (
-          document_id, version, file_path, file_size, change_log
-        ) VALUES ($1, 'v1', $2, $3, 'Initial upload')
-      `, [docId, dbFilePath, file.size])
+          document_id, version, file_path, file_size, change_log, file_content
+        ) VALUES ($1, 'v1', $2, $3, 'Initial upload', $4)
+      `, [docId, dbFilePath, file.size, fileContentBase64])
 
             await client.query('COMMIT')
 
@@ -232,6 +269,7 @@ const createDocumentsRouter = (pool, uploadsDir) => {
             const destination = `documents/${docRes.rows[0].project_id || 'global'}/${file.filename}`
             let dbFilePath = destination
             let uploadedToCloud = false
+            let fileContentBase64 = null
 
             if (bucket) {
                 try {
@@ -251,6 +289,12 @@ const createDocumentsRouter = (pool, uploadsDir) => {
             if (!uploadedToCloud) {
                 // Fallback
                 dbFilePath = file.filename
+                try {
+                    fileContentBase64 = fs.readFileSync(file.path).toString('base64')
+                    try { fs.unlinkSync(file.path) } catch (e) { }
+                } catch (e) {
+                    console.warn('Failed to read local file for DB fallback:', e.message)
+                }
             }
             // ----------------------------------
             // ----------------------------------
@@ -260,9 +304,9 @@ const createDocumentsRouter = (pool, uploadsDir) => {
             // Insert version
             await client.query(`
         INSERT INTO document_versions (
-          document_id, version, file_path, file_size, change_log
-        ) VALUES ($1, $2, $3, $4, $5)
-      `, [id, nextVer, dbFilePath, file.size, changeLog])
+          document_id, version, file_path, file_size, change_log, file_content
+        ) VALUES ($1, $2, $3, $4, $5, $6)
+      `, [id, nextVer, dbFilePath, file.size, changeLog, fileContentBase64])
 
             // Update document current_version
             await client.query(`

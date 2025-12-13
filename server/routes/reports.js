@@ -135,7 +135,7 @@ module.exports = (pool) => {
 
             const aggregatedData = {
                 type, // Store report type
-                summary: 'Auto-generated report', // Will be replaced by AI
+                summary: '', // Will be replaced by AI or manually entered
                 weather: 'Sunny (Mock)', // Placeholder
                 pms: {
                     activeTasks: pmsRes.rows,

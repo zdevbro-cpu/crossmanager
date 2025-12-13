@@ -17,10 +17,11 @@ interface ReportContent {
 interface ReportEditorProps {
     content: ReportContent
     title?: string
+    projectId?: string
     onChange: (newContent: ReportContent) => void
 }
 
-export default function ReportEditor({ content, title, onChange }: ReportEditorProps) {
+export default function ReportEditor({ content, title, onChange, projectId }: ReportEditorProps) {
     const handleChange = (field: string, value: any) => {
         onChange({ ...content, [field]: value })
     }
@@ -28,12 +29,14 @@ export default function ReportEditor({ content, title, onChange }: ReportEditorP
     const handleImportData = async () => {
         if (!confirm('최신 모듈 데이터를 가져와서 덮어쓰시겠습니까?')) return;
 
+        const pid = projectId || 'p1';
+
         try {
-            // Fetch from all modules (Project ID hardcoded to p1 for demo)
+            // Fetch from all modules
             const [smsRes, emsRes, swmsRes] = await Promise.all([
-                axios.get('/api/sms/checklists/summary?project_id=p1'),
-                axios.get('/api/ems/summary?project_id=p1'),
-                axios.get('/api/swms/summary?project_id=p1')
+                axios.get(`/api/sms/checklists/summary?project_id=${pid}`),
+                axios.get(`/api/ems/summary?project_id=${pid}`),
+                axios.get(`/api/swms/summary?project_id=${pid}`)
             ]);
 
             const smsData = smsRes.data;
@@ -81,16 +84,54 @@ export default function ReportEditor({ content, title, onChange }: ReportEditorP
                         <RefreshCcw size={14} style={{ marginRight: '6px' }} /> 데이터 동기화
                     </button>
                 </div>
-                <div className="report-meta-grid" style={{ marginTop: '1rem' }}>
-                    <div className="meta-item">
-                        <label className="label">날씨</label>
+                <div style={{ display: 'flex', justifyContent: 'center', gap: '4rem', marginTop: '2rem', marginBottom: '1.5rem' }}>
+                    {/* Weather (Editable) */}
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                        <span style={{ fontSize: '0.9rem', color: '#94a3b8' }}>날씨</span>
                         <input
                             type="text"
                             className="input-std"
-                            style={{ width: '120px', textAlign: 'center' }}
+                            style={{
+                                width: '140px', textAlign: 'center', height: '36px',
+                                background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
+                                color: '#e2e8f0', borderRadius: '8px'
+                            }}
                             value={content.weather}
                             onChange={(e) => handleChange('weather', e.target.value)}
                         />
+                    </div>
+                    {/* Safety Status (Display Only) */}
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                        <span style={{ fontSize: '0.9rem', color: '#94a3b8' }}>안전등급</span>
+                        {(() => {
+                            const status = content.sms?.safetyStatus || '미집계'
+                            let color = '#3b82f6'
+                            if (status === 'SAFE') color = '#10b981'
+                            else if (status === 'WARNING') color = '#f59e0b'
+                            else if (status === 'ACCIDENT') color = '#ef4444'
+                            return (
+                                <span style={{
+                                    padding: '0.2rem 0.8rem', borderRadius: '8px',
+                                    border: `1px solid ${color}`, color: color,
+                                    fontSize: '1rem', fontWeight: 600,
+                                    background: `${color}10`,
+                                    height: '36px', display: 'flex', alignItems: 'center',
+                                    boxShadow: `0 0 10px ${color}20`
+                                }}>
+                                    {status}
+                                </span>
+                            )
+                        })()}
+                    </div>
+                    {/* Date (Display Only) */}
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                        <span style={{ fontSize: '0.9rem', color: '#94a3b8' }}>작성일</span>
+                        <span style={{
+                            fontSize: '1.1rem', fontWeight: 500, color: '#e2e8f0',
+                            height: '36px', display: 'flex', alignItems: 'center'
+                        }}>
+                            {new Date().toLocaleDateString()}
+                        </span>
                     </div>
                 </div>
             </div>

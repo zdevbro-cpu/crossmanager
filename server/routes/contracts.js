@@ -7,23 +7,54 @@ const fs = require('fs')
 const admin = require('firebase-admin')
 const os = require('os')
 
+function resolveBucketName() {
+    if (process.env.FIREBASE_STORAGE_BUCKET) return process.env.FIREBASE_STORAGE_BUCKET
+
+    try {
+        if (process.env.FIREBASE_CONFIG) {
+            const config = JSON.parse(process.env.FIREBASE_CONFIG)
+            if (config.storageBucket) {
+                const bucket = String(config.storageBucket)
+                return bucket.endsWith('.firebasestorage.app')
+                    ? bucket.replace(/\.firebasestorage\.app$/, '.appspot.com')
+                    : bucket
+            }
+        }
+    } catch (e) { }
+
+    try {
+        const serviceAccountPath = path.join(__dirname, '..', 'serviceAccountKey.json')
+        if (fs.existsSync(serviceAccountPath)) {
+            const serviceAccount = require(serviceAccountPath)
+            if (serviceAccount?.project_id) return `${serviceAccount.project_id}.appspot.com`
+        }
+    } catch (e) { }
+
+    return 'crossmanager-1e21c.appspot.com'
+}
+
 // Initialize Firebase Admin if not already initialized
 if (!admin.apps.length) {
     try {
-        admin.initializeApp()
+        const bucketName = resolveBucketName()
+        const serviceAccountPath = path.join(__dirname, '..', 'serviceAccountKey.json')
+
+        if (fs.existsSync(serviceAccountPath)) {
+            const serviceAccount = require(serviceAccountPath)
+            admin.initializeApp({
+                credential: admin.credential.cert(serviceAccount),
+                storageBucket: bucketName
+            })
+        } else {
+            admin.initializeApp({ storageBucket: bucketName })
+        }
     } catch (e) {
         console.warn("Firebase Init Error (might lack credentials):", e.message)
     }
 }
 
 // Determine bucket name
-let bucketName = 'crossmanager-1e21c.firebasestorage.app'
-try {
-    if (process.env.FIREBASE_CONFIG) {
-        const config = JSON.parse(process.env.FIREBASE_CONFIG)
-        if (config.storageBucket) bucketName = config.storageBucket
-    }
-} catch (e) { }
+let bucketName = resolveBucketName()
 
 console.log('[Contracts] Using Storage Bucket:', bucketName)
 
@@ -49,6 +80,31 @@ const pool = new Pool({
     port: process.env.DB_PORT || 5432,
     ssl: { rejectUnauthorized: false }
 })
+
+async function ensureContractsSchema() {
+    try {
+        await pool.query('ALTER TABLE contracts ADD COLUMN IF NOT EXISTS attachment_path TEXT')
+        await pool.query('ALTER TABLE contracts ADD COLUMN IF NOT EXISTS attachment_size BIGINT')
+        await pool.query('ALTER TABLE contracts ADD COLUMN IF NOT EXISTS attachment_name TEXT')
+        await pool.query('ALTER TABLE contracts ADD COLUMN IF NOT EXISTS attachment_content TEXT')
+        await pool.query('ALTER TABLE contracts ADD COLUMN IF NOT EXISTS attachment_mime_type TEXT')
+        console.log('[Contracts] Schema OK')
+    } catch (e) {
+        console.warn('[Contracts] Schema check failed:', e.message)
+    }
+}
+
+ensureContractsSchema()
+
+function inferMimeType(filename = '') {
+    const ext = path.extname(String(filename)).toLowerCase()
+    if (ext === '.pdf') return 'application/pdf'
+    if (ext === '.png') return 'image/png'
+    if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg'
+    if (ext === '.doc') return 'application/msword'
+    if (ext === '.docx') return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    return 'application/octet-stream'
+}
 
 // Helper: Process Multipart Upload with Busboy
 const processUpload = (req) => {
@@ -102,6 +158,42 @@ const processUpload = (req) => {
 }
 
 // --- Contracts API ---
+
+// 0. Attachment View (serves DB fallback content or local file)
+router.get('/:id/attachment', async (req, res) => {
+    try {
+        const { id } = req.params
+        const { rows } = await pool.query(
+            'SELECT attachment_name, attachment_path, attachment_content, attachment_mime_type FROM contracts WHERE id = $1',
+            [id]
+        )
+        if (rows.length === 0) return res.status(404).send('Contract not found')
+
+        const row = rows[0]
+        const mimeType = row.attachment_mime_type || inferMimeType(row.attachment_name || row.attachment_path || '')
+
+        if (row.attachment_content) {
+            const buffer = Buffer.from(row.attachment_content, 'base64')
+            const filename = encodeURIComponent(row.attachment_name || 'attachment')
+            res.setHeader('Content-Type', mimeType)
+            res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${filename}`)
+            return res.send(buffer)
+        }
+
+        if (row.attachment_path && !String(row.attachment_path).includes('/')) {
+            const fullPath = path.join(uploadsDir, path.basename(row.attachment_path))
+            if (fs.existsSync(fullPath)) {
+                res.setHeader('Content-Type', mimeType)
+                return res.sendFile(fullPath)
+            }
+        }
+
+        return res.status(404).send('Attachment not found')
+    } catch (e) {
+        console.error('[Contracts] Attachment error:', e)
+        return res.status(500).send('Server Error')
+    }
+})
 
 // 1. Get All Contracts (Filter by projectId or status)
 router.get('/', async (req, res) => {
@@ -163,6 +255,9 @@ router.get('/:id', async (req, res) => {
 
         // Generate Signed URL for attachment if exists
         if (contract.attachment_path) {
+            if (contract.attachment_content) {
+                contract.attachmentUrl = `/api/contracts/${id}/attachment`
+            } else
             if (!contract.attachment_path.startsWith('http') && !contract.attachment_path.startsWith('/') && bucket) {
                 try {
                     const [url] = await bucket.file(contract.attachment_path).getSignedUrl({
@@ -175,7 +270,9 @@ router.get('/:id', async (req, res) => {
                 }
             } else {
                 // Legacy local path support
-                contract.attachmentUrl = `/uploads/${path.basename(contract.attachment_path)}`
+                contract.attachmentUrl = contract.attachment_path.includes('/')
+                    ? `/api/contracts/${id}/attachment`
+                    : `/uploads/${path.basename(contract.attachment_path)}`
             }
         }
 
@@ -230,6 +327,8 @@ router.post('/', async (req, res) => {
         let attachmentPath = null
         let attachmentSize = null
         let attachmentName = null
+        let attachmentContentBase64 = null
+        let attachmentMimeType = null
 
         if (file) {
             const destination = `contracts/${projectId || 'global'}/${file.filename}`
@@ -247,6 +346,7 @@ router.post('/', async (req, res) => {
                     attachmentPath = destination
                     attachmentSize = file.size
                     attachmentName = file.originalName
+                    attachmentMimeType = file.mimeType
                     // Remove temp file
                     try { fs.unlinkSync(file.path) } catch (e) { }
                 } catch (e) {
@@ -255,10 +355,17 @@ router.post('/', async (req, res) => {
             }
 
             if (!uploadedToCloud) {
-                // Fallback to local storage
+                // Fallback: store in DB as base64 so deployed can also access
                 attachmentPath = file.filename
                 attachmentSize = file.size
                 attachmentName = file.originalName
+                attachmentMimeType = file.mimeType
+                try {
+                    attachmentContentBase64 = fs.readFileSync(file.path).toString('base64')
+                    try { fs.unlinkSync(file.path) } catch (e) { }
+                } catch (e) {
+                    console.warn('[Contracts] Failed to read local file for DB fallback:', e.message)
+                }
             }
         }
 
@@ -270,7 +377,7 @@ router.post('/', async (req, res) => {
                 regulation_config, client_manager, our_manager,
                 contract_date, start_date, end_date,
                 terms_payment, terms_penalty, status, attachment,
-                attachment_path, attachment_size, attachment_name
+                attachment_path, attachment_size, attachment_name, attachment_content, attachment_mime_type
             ) VALUES (
                 $1, $2, $3, $4, $5, 
                 $6, $7, $8, $9, $10,
@@ -278,7 +385,7 @@ router.post('/', async (req, res) => {
                 $14, $15, $16,
                 $17, $18, $19,
                 $20, $21, $22, $23,
-                $24, $25, $26
+                $24, $25, $26, $27, $28
             ) RETURNING *
         `
 
@@ -290,7 +397,7 @@ router.post('/', async (req, res) => {
             contractDate, startDate, endDate,
             termsPayment, termsPenalty, status || 'DRAFT',
             attachment ? JSON.stringify(attachment) : null, // Keep for backward compatibility
-            attachmentPath, attachmentSize, attachmentName
+            attachmentPath, attachmentSize, attachmentName, attachmentContentBase64, attachmentMimeType
         ]
 
         const { rows: masterRows } = await client.query(insertMaster, masterParams)
@@ -370,8 +477,12 @@ router.put('/:id', async (req, res) => {
         let attachmentPath = null
         let attachmentSize = null
         let attachmentName = null
+        let attachmentContentBase64 = null
+        let attachmentMimeType = null
+        let hasNewFile = false
 
         if (file) {
+            hasNewFile = true
             // Get project_id for storage path
             const projectRes = await client.query('SELECT project_id FROM contracts WHERE id = $1', [id])
             const projectId = projectRes.rows[0]?.project_id
@@ -391,6 +502,8 @@ router.put('/:id', async (req, res) => {
                     attachmentPath = destination
                     attachmentSize = file.size
                     attachmentName = file.originalName
+                    attachmentMimeType = file.mimeType
+                    attachmentContentBase64 = null // clear previous DB content if any
                     try { fs.unlinkSync(file.path) } catch (e) { }
                 } catch (e) {
                     console.warn(`[Contracts] Storage Upload Failed: ${e.message}`)
@@ -401,6 +514,13 @@ router.put('/:id', async (req, res) => {
                 attachmentPath = file.filename
                 attachmentSize = file.size
                 attachmentName = file.originalName
+                attachmentMimeType = file.mimeType
+                try {
+                    attachmentContentBase64 = fs.readFileSync(file.path).toString('base64')
+                    try { fs.unlinkSync(file.path) } catch (e) { }
+                } catch (e) {
+                    console.warn('[Contracts] Failed to read local file for DB fallback:', e.message)
+                }
             }
         }
 
@@ -500,6 +620,12 @@ router.put('/:id', async (req, res) => {
         if (attachmentName !== null) {
             updateFields.push(`attachment_name = $${paramIndex++}`)
             updateParams.push(attachmentName)
+        }
+        if (hasNewFile) {
+            updateFields.push(`attachment_content = $${paramIndex++}`)
+            updateParams.push(attachmentContentBase64)
+            updateFields.push(`attachment_mime_type = $${paramIndex++}`)
+            updateParams.push(attachmentMimeType)
         }
 
         updateFields.push(`updated_at = CURRENT_TIMESTAMP`)

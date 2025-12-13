@@ -5,7 +5,7 @@ const cors = require('cors')
 const multer = require('multer')
 const path = require('path')
 const fs = require('fs')
-require('dotenv').config()
+require('dotenv').config({ path: path.join(__dirname, '.env') })
 const { Pool } = require('pg')
 
 const app = express()
@@ -85,6 +85,45 @@ if (process.env.DB_HOST && process.env.DB_HOST.startsWith('/cloudsql')) {
 
 const pool = new Pool(dbConfig)
 
+function resolveBucketName() {
+    if (process.env.FIREBASE_STORAGE_BUCKET) return process.env.FIREBASE_STORAGE_BUCKET
+
+    try {
+        if (process.env.FIREBASE_CONFIG) {
+            const config = JSON.parse(process.env.FIREBASE_CONFIG)
+            if (config.storageBucket) {
+                const bucket = String(config.storageBucket)
+                return bucket.endsWith('.firebasestorage.app')
+                    ? bucket.replace(/\.firebasestorage\.app$/, '.appspot.com')
+                    : bucket
+            }
+        }
+    } catch (e) { }
+
+    try {
+        const serviceAccountPath = path.join(__dirname, 'serviceAccountKey.json')
+        if (fs.existsSync(serviceAccountPath)) {
+            const serviceAccount = require(serviceAccountPath)
+            if (serviceAccount?.project_id) return `${serviceAccount.project_id}.appspot.com`
+        }
+    } catch (e) { }
+
+    return 'crossmanager-1e21c.appspot.com'
+}
+
+// Ensure schema exists for older/local DBs (prevents docview failures when running from different environments)
+async function ensureDocumentSchema() {
+    try {
+        await pool.query('ALTER TABLE document_versions ADD COLUMN IF NOT EXISTS file_content TEXT')
+        console.log('[Schema] document_versions.file_content OK')
+    } catch (e) {
+        console.warn('[Schema] document_versions.file_content check failed:', e.message)
+    }
+}
+
+// Fire-and-forget: do not block server start
+ensureDocumentSchema()
+
 pool.connect((err) => {
     if (err) console.error('Database connection error', err.stack)
     else console.log('Database connected successfully')
@@ -109,7 +148,27 @@ app.get(['/api/docview/:id/:filename', '/api/docview/:id'], async (req, res) => 
                 v.created_at DESC
             LIMIT 1
         `
-        const resDb = await pool.query(query, [id])
+        let resDb
+        try {
+            resDb = await pool.query(query, [id])
+        } catch (e) {
+            // Backward-compatible fallback when local DB is missing document_versions.file_content
+            if (String(e?.message || '').includes('file_content')) {
+                const fallbackQuery = `
+                    SELECT v.file_path, NULL as file_content, d.name
+                    FROM documents d
+                    JOIN document_versions v ON d.id = v.document_id
+                    WHERE d.id = $1
+                    ORDER BY 
+                        CASE WHEN d.current_version = v.version THEN 1 ELSE 2 END,
+                        v.created_at DESC
+                    LIMIT 1
+                `
+                resDb = await pool.query(fallbackQuery, [id])
+            } else {
+                throw e
+            }
+        }
 
         if (resDb.rows.length === 0) {
             console.log(`[Index.js View] Document not found or no versions: ${id}`)
@@ -179,13 +238,7 @@ app.get(['/api/docview/:id/:filename', '/api/docview/:id'], async (req, res) => 
         }
 
         // Determine bucket name (Logic matches routes/documents.js)
-        let bucketName = 'crossmanager-1e21c.firebasestorage.app'
-        try {
-            if (process.env.FIREBASE_CONFIG) {
-                const config = JSON.parse(process.env.FIREBASE_CONFIG)
-                if (config.storageBucket) bucketName = config.storageBucket
-            }
-        } catch (e) { }
+        const bucketName = resolveBucketName()
 
         try {
             const bucket = admin.storage().bucket(bucketName)
@@ -223,7 +276,23 @@ app.get(['/api/docview/versions/:versionId/:filename', '/api/docview/versions/:v
             JOIN documents d ON v.document_id = d.id
             WHERE v.id = $1
         `
-        const resDb = await pool.query(query, [versionId])
+        let resDb
+        try {
+            resDb = await pool.query(query, [versionId])
+        } catch (e) {
+            // Backward-compatible fallback when local DB is missing document_versions.file_content
+            if (String(e?.message || '').includes('file_content')) {
+                const fallbackQuery = `
+                    SELECT v.file_path, NULL as file_content, d.name, v.version
+                    FROM document_versions v
+                    JOIN documents d ON v.document_id = d.id
+                    WHERE v.id = $1
+                `
+                resDb = await pool.query(fallbackQuery, [versionId])
+            } else {
+                throw e
+            }
+        }
 
         if (resDb.rows.length === 0) return res.status(404).send('Version not found')
 
@@ -2295,7 +2364,18 @@ app.delete('/api/projects/:id', async (req, res) => {
     }
 })
 // ==================== SWMS APIs ====================
+// ==================== SWMS APIs ====================
 require('./swms_routes')(app, pool)
+
+// ==================== PMS/SMS/EMS Integration APIs for Reports ====================
+const emsSummaryRouter = require('./routes/ems_summary')(pool)
+app.use('/api/ems', emsSummaryRouter)
+
+const smsChecklistsRouter = require('./routes/sms_checklists')(pool)
+app.use('/api/sms/checklists', smsChecklistsRouter) // Note path usage in ReportEditor
+
+const swmsSummaryRouter = require('./routes/swms_summary')(pool)
+app.use('/api/swms', swmsSummaryRouter)
 
 app.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}`)
@@ -2303,6 +2383,3 @@ app.listen(PORT, () => {
 
 
 module.exports = app
-
-
-

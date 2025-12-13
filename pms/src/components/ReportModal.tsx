@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
-import { X, Send, Check, AlertCircle, Download } from 'lucide-react'
+import { X, Send, Check, AlertCircle, Download, Edit2 } from 'lucide-react'
 import ReportViewer from './ReportViewer'
 import ReportEditor from './ReportEditor'
-import './ReportPrint.css'
+import { generateReportPDF } from '../utils/pdfGenerator'
 
 interface ReportModalProps {
     mode: 'VIEW' | 'CREATE' | 'EDIT'
@@ -33,12 +33,19 @@ export default function ReportModal({ mode, report, isOpen, onClose, onSave, onS
     const status = report?.status || 'DRAFT'
     const isDraft = status === 'DRAFT'
     const isPending = status === 'PENDING'
-    const isApproved = status === 'APPROVED'
 
-    const handlePrintAsPDF = () => {
-        // 브라우저 인쇄 대화상자 열기
-        // 사용자가 "PDF로 저장" 선택 가능
-        window.print()
+    const handlePrintAsPDF = async () => {
+        if (!report || !report.content) {
+            alert('보고서 데이터가 없습니다.')
+            return
+        }
+
+        try {
+            await generateReportPDF(report.content, report.title)
+        } catch (error) {
+            console.error('PDF 생성 실패:', error)
+            alert('PDF 생성에 실패했습니다.')
+        }
     }
 
     const handleSubmit = () => {
@@ -66,9 +73,6 @@ export default function ReportModal({ mode, report, isOpen, onClose, onSave, onS
 
     const handleSave = () => {
         onSave?.(draftContent)
-        // setIsEditing(false) // Optional: stay in edit mode or close? Usually close edit mode.
-        // Assuming parent might close modal or just update data. 
-        // Let's assume onSave handles optimistic update, so we can switch back to view.
         setIsEditing(false)
     }
 
@@ -120,10 +124,11 @@ export default function ReportModal({ mode, report, isOpen, onClose, onSave, onS
                                 content={draftContent}
                                 onChange={setDraftContent}
                                 title={report.title}
+                                projectId={report.projectId || report.project_id}
                             />
                         ) : (
                             <div id="report-content-for-pdf">
-                                <ReportViewer data={report.content || report} title={report.title} />
+                                <ReportViewer data={report.content || report} title={report.title} projectId={report.projectId} />
                             </div>
                         )
                     ) : (
@@ -144,116 +149,117 @@ export default function ReportModal({ mode, report, isOpen, onClose, onSave, onS
                             <button
                                 onClick={handlePrintAsPDF}
                                 style={{
-                                    display: 'flex',
-                                    gap: '0.5rem',
-                                    alignItems: 'center',
-                                    height: '42px',
-                                    padding: '0 1.5rem',
-                                    borderRadius: '10px',
-                                    background: '#1e293b',
-                                    border: '1px solid rgba(255,255,255,0.12)',
-                                    color: '#fff',
-                                    fontSize: '1rem',
-                                    fontWeight: 600,
-                                    cursor: 'pointer'
+                                    display: 'flex', gap: '0.5rem', alignItems: 'center', height: '40px', padding: '0 1.2rem',
+                                    borderRadius: '8px', background: '#1e293b', border: '1px solid rgba(255,255,255,0.12)',
+                                    color: '#fff', fontSize: '1rem', fontWeight: 600, cursor: 'pointer'
                                 }}
                             >
-                                <Download size={16} /> PDF 인쇄/저장
+                                <Download size={16} /> PDF 다운로드
                             </button>
                         )}
                     </div>
 
-                    <div className="right-actions" style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                    <div className="right-actions" style={{ display: 'flex', gap: '0.8rem', alignItems: 'center' }}>
                         {isEditing ? (
                             <>
-                                <button className="btn-secondary" style={{
-                                    height: '42px', padding: '0 1.5rem', borderRadius: '10px',
+                                <button style={{
+                                    height: '40px', padding: '0 1.2rem', borderRadius: '8px',
                                     background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)',
-                                    color: '#fff', fontSize: '1rem', fontWeight: 600
+                                    color: '#e2e8f0', fontSize: '0.95rem', fontWeight: 500,
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    margin: 0, cursor: 'pointer', outline: 'none'
                                 }} onClick={() => setIsEditing(false)}>
-                                    취소
+                                    <X size={16} style={{ marginRight: '6px' }} /> 취소
                                 </button>
-                                <button className="btn-primary" style={{
-                                    height: '42px', padding: '0 1.5rem', borderRadius: '10px',
+                                <button style={{
+                                    height: '40px', padding: '0 1.2rem', borderRadius: '8px',
                                     background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)',
-                                    color: '#4ea1ff', fontSize: '1rem', fontWeight: 600,
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                    color: '#4ea1ff', fontSize: '0.95rem', fontWeight: 600,
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    margin: 0, cursor: 'pointer', outline: 'none'
                                 }} onClick={handleSave}>
-                                    <Check size={16} style={{ marginRight: '8px' }} /> 저장
+                                    <Check size={16} style={{ marginRight: '6px' }} /> 저장
                                 </button>
                             </>
                         ) : (
                             <>
                                 {mode === 'CREATE' && (
-                                    <button className="btn-primary" onClick={() => onSave?.(report)}>
+                                    <button className="btn-primary" onClick={() => onSave?.(report)} style={{
+                                        height: '40px', padding: '0 1.2rem', borderRadius: '8px',
+                                        background: '#2563eb', border: '1px solid #3b82f6', color: '#fff', fontWeight: 600,
+                                        display: 'flex', alignItems: 'center'
+                                    }}>
                                         <Check size={16} style={{ marginRight: '8px' }} /> 작성 완료
                                     </button>
                                 )}
 
                                 {mode === 'VIEW' && isDraft && (
                                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                                        <button className="btn-secondary" style={{
-                                            height: '42px', padding: '0 1.5rem', borderRadius: '10px',
+                                        <button style={{
+                                            height: '40px', padding: '0 1.2rem', borderRadius: '8px',
                                             background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)',
-                                            color: '#fff', fontSize: '1rem', fontWeight: 600,
-                                            display: 'flex', alignItems: 'center', justifyContent: 'center', margin: 0
+                                            color: '#e2e8f0', fontSize: '0.95rem', fontWeight: 500,
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            margin: 0, cursor: 'pointer', outline: 'none'
                                         }} onClick={() => setIsEditing(true)}>
-                                            <Check size={16} style={{ marginRight: '8px' }} /> 저장
+                                            <Edit2 size={16} style={{ marginRight: '6px' }} /> 내용 수정
                                         </button>
-                                        <button className="btn-primary" style={{
-                                            height: '42px', padding: '0 1.5rem', borderRadius: '10px',
+                                        <button style={{
+                                            height: '40px', padding: '0 1.2rem', borderRadius: '8px',
                                             background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)',
-                                            color: '#4ea1ff', fontSize: '1rem', fontWeight: 600,
-                                            display: 'flex', alignItems: 'center', justifyContent: 'center', margin: 0
+                                            color: '#4ea1ff', fontSize: '0.95rem', fontWeight: 600,
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            margin: 0, cursor: 'pointer', outline: 'none'
                                         }} onClick={handleSubmit}>
-                                            <Send size={16} style={{ marginRight: '8px' }} /> 결재
+                                            <Send size={16} style={{ marginRight: '6px', display: 'block' }} /> 결재
                                         </button>
                                     </div>
                                 )}
 
                                 {mode === 'VIEW' && isPending && isApprover && (
-                                    <>
+                                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                                         {showRejectForm ? (
-                                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                            <>
                                                 <input
                                                     type="text"
                                                     placeholder="반려 사유 입력"
                                                     value={comment}
                                                     onChange={e => setComment(e.target.value)}
                                                     className="input-sm"
-                                                    style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.12)', color: '#fff' }}
+                                                    style={{ height: '40px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.12)', color: '#fff' }}
                                                 />
                                                 <button style={{
-                                                    height: '42px', padding: '0 1.5rem', borderRadius: '10px',
-                                                    background: '#1e293b', border: '1px solid rgba(255,255,255,0.12)',
-                                                    color: '#fff', fontSize: '1rem', fontWeight: 600, cursor: 'pointer'
+                                                    height: '40px', padding: '0 1.2rem', borderRadius: '8px',
+                                                    background: '#b91c1c', border: '1px solid #dc2626',
+                                                    color: '#fff', fontSize: '0.95rem', fontWeight: 600, cursor: 'pointer'
                                                 }} onClick={handleReject}>확인</button>
                                                 <button style={{
-                                                    height: '42px', padding: '0 1.5rem', borderRadius: '10px',
+                                                    height: '40px', padding: '0 1.2rem', borderRadius: '8px',
                                                     background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)',
-                                                    color: '#fff', fontSize: '1rem', fontWeight: 600, cursor: 'pointer'
+                                                    color: '#e2e8f0', fontSize: '0.95rem', fontWeight: 500, cursor: 'pointer'
                                                 }} onClick={() => setShowRejectForm(false)}>취소</button>
-                                            </div>
+                                            </>
                                         ) : (
-                                            <button style={{
-                                                height: '42px', padding: '0 1.5rem', borderRadius: '10px',
-                                                background: '#1e293b', border: '1px solid rgba(255,255,255,0.12)',
-                                                color: '#fff', fontSize: '1rem', fontWeight: 600,
-                                                display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer'
-                                            }} onClick={() => setShowRejectForm(true)}>
-                                                <AlertCircle size={16} style={{ marginRight: '8px' }} /> 반려
-                                            </button>
+                                            <>
+                                                <button style={{
+                                                    height: '40px', padding: '0 1.2rem', borderRadius: '8px',
+                                                    background: 'rgba(220, 38, 38, 0.1)', border: '1px solid #dc2626',
+                                                    color: '#fca5a5', fontSize: '0.95rem', fontWeight: 600,
+                                                    display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer'
+                                                }} onClick={() => setShowRejectForm(true)}>
+                                                    <AlertCircle size={16} style={{ marginRight: '8px' }} /> 반려
+                                                </button>
+                                                <button style={{
+                                                    height: '40px', padding: '0 1.2rem', borderRadius: '8px',
+                                                    background: '#0b1324', border: '1px solid rgba(103, 232, 249, 0.55)',
+                                                    color: '#fff', fontSize: '0.95rem', fontWeight: 600,
+                                                    display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer'
+                                                }} onClick={handleApprove}>
+                                                    <Check size={16} style={{ marginRight: '6px' }} /> 승인
+                                                </button>
+                                            </>
                                         )}
-
-                                        <button style={{
-                                            height: '42px', padding: '0 1.5rem', borderRadius: '10px',
-                                            background: '#1e293b', border: '1px solid rgba(255,255,255,0.12)',
-                                            color: '#4ea1ff', fontSize: '1rem', fontWeight: 600,
-                                            display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer'
-                                        }} onClick={handleApprove}>
-                                            <Check size={16} style={{ marginRight: '8px' }} /> 승인
-                                        </button>
-                                    </>
+                                    </div>
                                 )}
                             </>
                         )}

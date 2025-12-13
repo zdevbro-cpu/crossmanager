@@ -6,7 +6,7 @@ const multer = require('multer')
 const path = require('path')
 const fs = require('fs')
 const os = require('os')
-require('dotenv').config()
+require('dotenv').config({ path: path.join(__dirname, '.env') })
 const { Pool } = require('pg')
 const { createDocumentsRouter } = require('./routes/documents')
 
@@ -36,6 +36,24 @@ const upload = multer({
     storage: storage,
     limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
 })
+
+function normalizeBucketName(value) {
+    const bucket = String(value || '')
+    return bucket.endsWith('.firebasestorage.app')
+        ? bucket.replace(/\.firebasestorage\.app$/, '.appspot.com')
+        : bucket
+}
+
+function resolveBucketName() {
+    if (process.env.FIREBASE_STORAGE_BUCKET) return process.env.FIREBASE_STORAGE_BUCKET
+    try {
+        if (process.env.FIREBASE_CONFIG) {
+            const config = JSON.parse(process.env.FIREBASE_CONFIG)
+            if (config.storageBucket) return normalizeBucketName(config.storageBucket)
+        }
+    } catch (e) { }
+    return 'crossmanager-1e21c.appspot.com'
+}
 
 // Utility helpers
 const todayStr = () => new Date().toISOString().split('T')[0]
@@ -108,6 +126,34 @@ if (true) {
 
 const pool = new Pool(dbConfig)
 
+// Ensure schema exists for older/local DBs (prevents docview failures)
+async function ensureDocumentSchema() {
+    try {
+        await pool.query('ALTER TABLE document_versions ADD COLUMN IF NOT EXISTS file_content TEXT')
+        console.log('[Schema] document_versions.file_content OK')
+    } catch (e) {
+        console.warn('[Schema] document_versions.file_content check failed:', e.message)
+    }
+}
+
+// Fire-and-forget: do not block server start
+ensureDocumentSchema()
+
+async function ensureContractsSchema() {
+    try {
+        await pool.query('ALTER TABLE contracts ADD COLUMN IF NOT EXISTS attachment_path TEXT')
+        await pool.query('ALTER TABLE contracts ADD COLUMN IF NOT EXISTS attachment_size BIGINT')
+        await pool.query('ALTER TABLE contracts ADD COLUMN IF NOT EXISTS attachment_name TEXT')
+        await pool.query('ALTER TABLE contracts ADD COLUMN IF NOT EXISTS attachment_content TEXT')
+        await pool.query('ALTER TABLE contracts ADD COLUMN IF NOT EXISTS attachment_mime_type TEXT')
+        console.log('[Schema] contracts attachments OK')
+    } catch (e) {
+        console.warn('[Schema] contracts schema check failed:', e.message)
+    }
+}
+
+ensureContractsSchema()
+
 // --- Added File Retrieval Routes (Ported from server/index.js) ---
 // 1. View Document File (Inline with Clean Name)
 app.get(['/api/docview/:id/:filename', '/api/docview/:id'], async (req, res) => {
@@ -126,7 +172,27 @@ app.get(['/api/docview/:id/:filename', '/api/docview/:id'], async (req, res) => 
                 v.created_at DESC
             LIMIT 1
         `
-        const resDb = await pool.query(query, [id])
+        let resDb
+        try {
+            resDb = await pool.query(query, [id])
+        } catch (e) {
+            // Backward-compatible fallback when DB is missing document_versions.file_content
+            if (String(e?.message || '').includes('file_content')) {
+                const fallbackQuery = `
+                    SELECT v.file_path, NULL as file_content, d.name
+                    FROM documents d
+                    JOIN document_versions v ON d.id = v.document_id
+                    WHERE d.id = $1
+                    ORDER BY 
+                        CASE WHEN d.current_version = v.version THEN 1 ELSE 2 END,
+                        v.created_at DESC
+                    LIMIT 1
+                `
+                resDb = await pool.query(fallbackQuery, [id])
+            } else {
+                throw e
+            }
+        }
 
         if (resDb.rows.length === 0) {
             console.log(`[App.js View] Document not found or no versions: ${id}`)
@@ -185,11 +251,14 @@ app.get(['/api/docview/:id/:filename', '/api/docview/:id'], async (req, res) => 
         }
 
         // Determine bucket name (Logic matches routes/documents.js)
-        let bucketName = 'crossmanager-1e21c.firebasestorage.app'
+        let bucketName = process.env.FIREBASE_STORAGE_BUCKET || 'crossmanager-1e21c.appspot.com'
         try {
             if (process.env.FIREBASE_CONFIG) {
                 const config = JSON.parse(process.env.FIREBASE_CONFIG)
-                if (config.storageBucket) bucketName = config.storageBucket
+                if (config.storageBucket) {
+                    const b = String(config.storageBucket)
+                    bucketName = b.endsWith('.firebasestorage.app') ? b.replace(/\.firebasestorage\.app$/, '.appspot.com') : b
+                }
             }
         } catch (e) { }
 
@@ -229,7 +298,23 @@ app.get(['/api/docview/versions/:versionId/:filename', '/api/docview/versions/:v
             JOIN documents d ON v.document_id = d.id
             WHERE v.id = $1
         `
-        const resDb = await pool.query(query, [versionId])
+        let resDb
+        try {
+            resDb = await pool.query(query, [versionId])
+        } catch (e) {
+            // Backward-compatible fallback when DB is missing document_versions.file_content
+            if (String(e?.message || '').includes('file_content')) {
+                const fallbackQuery = `
+                    SELECT v.file_path, NULL as file_content, d.name, v.version
+                    FROM document_versions v
+                    JOIN documents d ON v.document_id = d.id
+                    WHERE v.id = $1
+                `
+                resDb = await pool.query(fallbackQuery, [versionId])
+            } else {
+                throw e
+            }
+        }
 
         if (resDb.rows.length === 0) return res.status(404).send('Version not found')
 
@@ -275,11 +360,14 @@ app.get(['/api/docview/versions/:versionId/:filename', '/api/docview/versions/:v
         if (filePath.includes('/')) {
             const admin = require('firebase-admin')
             if (!admin.apps.length) admin.initializeApp()
-            let bucketName = 'crossmanager-1e21c.firebasestorage.app'
+            let bucketName = process.env.FIREBASE_STORAGE_BUCKET || 'crossmanager-1e21c.appspot.com'
             try {
                 if (process.env.FIREBASE_CONFIG) {
                     const config = JSON.parse(process.env.FIREBASE_CONFIG)
-                    if (config.storageBucket) bucketName = config.storageBucket
+                    if (config.storageBucket) {
+                        const b = String(config.storageBucket)
+                        bucketName = b.endsWith('.firebasestorage.app') ? b.replace(/\.firebasestorage\.app$/, '.appspot.com') : b
+                    }
                 }
             } catch (e) { }
 
@@ -899,6 +987,58 @@ app.delete('/api/users/:uid', async (req, res) => {
 
 // --- Contracts API ---
 
+function inferMimeType(filename = '') {
+    const ext = path.extname(String(filename)).toLowerCase()
+    if (ext === '.pdf') return 'application/pdf'
+    if (ext === '.png') return 'image/png'
+    if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg'
+    if (ext === '.doc') return 'application/msword'
+    if (ext === '.docx') return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    return 'application/octet-stream'
+}
+
+function getBucket() {
+    const admin = require('firebase-admin')
+    if (!admin.apps.length) admin.initializeApp({ storageBucket: resolveBucketName() })
+    return admin.storage().bucket(resolveBucketName())
+}
+
+// 0. Attachment View (serves DB fallback content or local file)
+app.get('/api/contracts/:id/attachment', async (req, res) => {
+    try {
+        const { id } = req.params
+        const { rows } = await pool.query(
+            'SELECT attachment_name, attachment_path, attachment_content, attachment_mime_type FROM contracts WHERE id = $1',
+            [id]
+        )
+        if (rows.length === 0) return res.status(404).send('Contract not found')
+
+        const row = rows[0]
+        const mimeType = row.attachment_mime_type || inferMimeType(row.attachment_name || row.attachment_path || '')
+
+        if (row.attachment_content) {
+            const buffer = Buffer.from(row.attachment_content, 'base64')
+            const filename = encodeURIComponent(row.attachment_name || 'attachment')
+            res.setHeader('Content-Type', mimeType)
+            res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${filename}`)
+            return res.send(buffer)
+        }
+
+        if (row.attachment_path && !String(row.attachment_path).includes('/')) {
+            const fullPath = path.join(uploadsDir, path.basename(row.attachment_path))
+            if (fs.existsSync(fullPath)) {
+                res.setHeader('Content-Type', mimeType)
+                return res.sendFile(fullPath)
+            }
+        }
+
+        return res.status(404).send('Attachment not found')
+    } catch (e) {
+        console.error('[Contracts] Attachment error:', e)
+        return res.status(500).send('Server Error')
+    }
+})
+
 // 1. Get All Contracts
 app.get('/api/contracts', async (req, res) => {
     try {
@@ -955,6 +1095,29 @@ app.get('/api/contracts/:id', async (req, res) => {
         const itemsRes = await pool.query('SELECT * FROM contract_items WHERE contract_id = $1 ORDER BY created_at ASC', [id])
         contract.items = itemsRes.rows
 
+        if (contract.attachment_content) {
+            contract.attachmentUrl = `/api/contracts/${id}/attachment`
+        } else if (contract.attachment_path) {
+            if (!String(contract.attachment_path).startsWith('http') && !String(contract.attachment_path).startsWith('/')) {
+                if (String(contract.attachment_path).startsWith('contracts/')) {
+                    try {
+                        const bucket = getBucket()
+                        const [url] = await bucket.file(contract.attachment_path).getSignedUrl({
+                            action: 'read',
+                            expires: Date.now() + 1000 * 60 * 60,
+                        })
+                        contract.attachmentUrl = url
+                    } catch (e) {
+                        console.warn('[Contracts] Error signing URL:', e.message)
+                    }
+                } else {
+                    contract.attachmentUrl = `/api/contracts/${id}/attachment`
+                }
+            } else {
+                contract.attachmentUrl = contract.attachment_path
+            }
+        }
+
         res.json(contract)
     } catch (err) {
         console.error(err)
@@ -963,10 +1126,13 @@ app.get('/api/contracts/:id', async (req, res) => {
 })
 
 // 3. Create Contract
-app.post('/api/contracts', async (req, res) => {
+app.post('/api/contracts', upload.single('file'), async (req, res) => {
     const client = await pool.connect()
     try {
         await client.query('BEGIN')
+
+        const body = req.body || {}
+        const file = req.file || null
 
         const {
             projectId, type, category, name,
@@ -975,7 +1141,40 @@ app.post('/api/contracts', async (req, res) => {
             regulationConfig, clientManager, ourManager,
             contractDate, startDate, endDate,
             termsPayment, termsPenalty, status, items, attachment
-        } = req.body
+        } = body
+
+        const parsedItems = typeof items === 'string' ? safeParseJson(items, []) : items
+        const parsedRegulationConfig = typeof regulationConfig === 'string' ? safeParseJson(regulationConfig, {}) : regulationConfig
+
+        let attachmentPath = null
+        let attachmentSize = null
+        let attachmentName = null
+        let attachmentContentBase64 = null
+        let attachmentMimeType = null
+
+        if (file) {
+            const destination = `contracts/${projectId || 'global'}/${file.filename}`
+            try {
+                const bucket = getBucket()
+                await bucket.upload(file.path, { destination, metadata: { contentType: file.mimetype } })
+                attachmentPath = destination
+                attachmentSize = file.size
+                attachmentName = file.originalname
+                attachmentMimeType = file.mimetype
+                try { fs.unlinkSync(file.path) } catch (e) { }
+            } catch (e) {
+                attachmentPath = file.filename
+                attachmentSize = file.size
+                attachmentName = file.originalname
+                attachmentMimeType = file.mimetype
+                try {
+                    attachmentContentBase64 = fs.readFileSync(file.path).toString('base64')
+                    try { fs.unlinkSync(file.path) } catch (e2) { }
+                } catch (e2) {
+                    console.warn('[Contracts] Failed to read local file for DB fallback:', e2.message)
+                }
+            }
+        }
 
         // Generate Code
         const dateStr = new Date().toISOString().slice(2, 10).replace(/-/g, '')
@@ -989,14 +1188,16 @@ app.post('/api/contracts', async (req, res) => {
                 indirect_rate, risk_rate, margin_rate,
                 regulation_config, client_manager, our_manager,
                 contract_date, start_date, end_date,
-                terms_payment, terms_penalty, status, attachment
+                terms_payment, terms_penalty, status, attachment,
+                attachment_path, attachment_size, attachment_name, attachment_content, attachment_mime_type
             ) VALUES (
                 $1, $2, $3, $4, $5, 
                 $6, $7, $8, $9, $10,
                 $11, $12, $13,
                 $14, $15, $16,
                 $17, $18, $19,
-                $20, $21, $22, $23
+                $20, $21, $22, $23,
+                $24, $25, $26, $27, $28
             ) RETURNING *
         `
 
@@ -1004,16 +1205,17 @@ app.post('/api/contracts', async (req, res) => {
             projectId, code, type, category, name,
             totalAmount || 0, costDirect || 0, costIndirect || 0, riskFee || 0, margin || 0,
             indirectRate || 0, riskRate || 0, marginRate || 0,
-            JSON.stringify(regulationConfig || {}), clientManager, ourManager,
+            JSON.stringify(parsedRegulationConfig || {}), clientManager, ourManager,
             contractDate, startDate, endDate,
             termsPayment, termsPenalty, status || 'DRAFT',
-            attachment ? JSON.stringify(attachment) : null
+            attachment ? JSON.stringify(attachment) : null,
+            attachmentPath, attachmentSize, attachmentName, attachmentContentBase64, attachmentMimeType
         ]
 
         const { rows: masterRows } = await client.query(insertMaster, masterParams)
         const contractId = masterRows[0].id
 
-        if (items && Array.isArray(items) && items.length > 0) {
+        if (parsedItems && Array.isArray(parsedItems) && parsedItems.length > 0) {
             const insertItem = `
                 INSERT INTO contract_items (
                     contract_id, group_name, name, spec, 
@@ -1021,7 +1223,7 @@ app.post('/api/contracts', async (req, res) => {
                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             `
 
-            for (const item of items) {
+            for (const item of parsedItems) {
                 await client.query(insertItem, [
                     contractId, item.group, item.name, item.spec,
                     item.quantity || 0, item.unit, item.unitPrice || 0, item.amount || 0, item.note
@@ -1041,11 +1243,14 @@ app.post('/api/contracts', async (req, res) => {
 })
 
 // 4. Update Contract
-app.put('/api/contracts/:id', async (req, res) => {
+app.put('/api/contracts/:id', upload.single('file'), async (req, res) => {
     const client = await pool.connect()
     try {
         await client.query('BEGIN')
         const { id } = req.params
+        const body = req.body || {}
+        const file = req.file || null
+
         const {
             category, name,
             totalAmount, costDirect, costIndirect, riskFee, margin,
@@ -1053,7 +1258,108 @@ app.put('/api/contracts/:id', async (req, res) => {
             regulationConfig, clientManager, ourManager,
             contractDate, startDate, endDate,
             termsPayment, termsPenalty, status, items, attachment
-        } = req.body
+        } = body
+
+        const parsedItems = typeof items === 'string' ? safeParseJson(items, []) : items
+        const parsedRegulationConfig = typeof regulationConfig === 'string' ? safeParseJson(regulationConfig, null) : regulationConfig
+
+        if (file) {
+            // project_id for destination
+            const projectRes = await client.query('SELECT project_id FROM contracts WHERE id = $1', [id])
+            const projectId = projectRes.rows[0]?.project_id
+
+            let attachmentPath = null
+            let attachmentSize = file.size
+            let attachmentName = file.originalname
+            let attachmentContentBase64 = null
+            let attachmentMimeType = file.mimetype
+
+            const destination = `contracts/${projectId || 'global'}/${file.filename}`
+            try {
+                const bucket = getBucket()
+                await bucket.upload(file.path, { destination, metadata: { contentType: file.mimetype } })
+                attachmentPath = destination
+                attachmentContentBase64 = null
+                try { fs.unlinkSync(file.path) } catch (e) { }
+            } catch (e) {
+                attachmentPath = file.filename
+                try {
+                    attachmentContentBase64 = fs.readFileSync(file.path).toString('base64')
+                    try { fs.unlinkSync(file.path) } catch (e2) { }
+                } catch (e2) {
+                    console.warn('[Contracts] Failed to read local file for DB fallback:', e2.message)
+                }
+            }
+
+            const updateWithFile = `
+                UPDATE contracts SET
+                    category = COALESCE($2, category),
+                    name = COALESCE($3, name),
+                    total_amount = COALESCE($4, total_amount),
+                    cost_direct = COALESCE($5, cost_direct),
+                    cost_indirect = COALESCE($6, cost_indirect),
+                    risk_fee = COALESCE($7, risk_fee),
+                    margin = COALESCE($8, margin),
+                    indirect_rate = COALESCE($9, indirect_rate),
+                    risk_rate = COALESCE($10, risk_rate),
+                    margin_rate = COALESCE($11, margin_rate),
+                    regulation_config = COALESCE($12, regulation_config),
+                    client_manager = COALESCE($13, client_manager),
+                    our_manager = COALESCE($14, our_manager),
+                    contract_date = COALESCE($15, contract_date),
+                    start_date = COALESCE($16, start_date),
+                    end_date = COALESCE($17, end_date),
+                    terms_payment = COALESCE($18, terms_payment),
+                    terms_penalty = COALESCE($19, terms_penalty),
+                    status = COALESCE($20, status),
+                    attachment = COALESCE($21, attachment),
+                    attachment_path = $22,
+                    attachment_size = $23,
+                    attachment_name = $24,
+                    attachment_content = $25,
+                    attachment_mime_type = $26,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = $1
+                RETURNING *
+            `
+
+            const params = [
+                id, category, name,
+                totalAmount, costDirect, costIndirect, riskFee, margin,
+                indirectRate, riskRate, marginRate,
+                parsedRegulationConfig !== undefined ? JSON.stringify(parsedRegulationConfig) : null,
+                clientManager, ourManager,
+                contractDate, startDate, endDate,
+                termsPayment, termsPenalty, status,
+                attachment ? JSON.stringify(attachment) : null,
+                attachmentPath, attachmentSize, attachmentName, attachmentContentBase64, attachmentMimeType
+            ]
+
+            const { rows: masterRows } = await client.query(updateWithFile, params)
+            if (masterRows.length === 0) {
+                await client.query('ROLLBACK')
+                return res.status(404).json({ error: 'Contract not found' })
+            }
+
+            if (parsedItems && Array.isArray(parsedItems)) {
+                await client.query('DELETE FROM contract_items WHERE contract_id = $1', [id])
+                const insertItem = `
+                    INSERT INTO contract_items (
+                        contract_id, group_name, name, spec, 
+                        quantity, unit, unit_price, amount, note
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                `
+                for (const item of parsedItems) {
+                    await client.query(insertItem, [
+                        id, item.group, item.name, item.spec,
+                        item.quantity || 0, item.unit, item.unitPrice || 0, item.amount || 0, item.note
+                    ])
+                }
+            }
+
+            await client.query('COMMIT')
+            return res.json(masterRows[0])
+        }
 
         const updateMaster = `
             UPDATE contracts SET 
@@ -1085,7 +1391,7 @@ app.put('/api/contracts/:id', async (req, res) => {
             id, category, name,
             totalAmount, costDirect, costIndirect, riskFee, margin,
             indirectRate, riskRate, marginRate,
-            regulationConfig ? JSON.stringify(regulationConfig) : null,
+            parsedRegulationConfig !== undefined ? JSON.stringify(parsedRegulationConfig) : null,
             clientManager, ourManager,
             contractDate, startDate, endDate,
             termsPayment, termsPenalty, status,
@@ -1099,7 +1405,7 @@ app.put('/api/contracts/:id', async (req, res) => {
         }
 
         // Full Replace Items
-        if (items && Array.isArray(items)) {
+        if (parsedItems && Array.isArray(parsedItems)) {
             await client.query('DELETE FROM contract_items WHERE contract_id = $1', [id])
 
             const insertItem = `
@@ -1109,7 +1415,7 @@ app.put('/api/contracts/:id', async (req, res) => {
                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             `
 
-            for (const item of items) {
+            for (const item of parsedItems) {
                 await client.query(insertItem, [
                     id, item.group, item.name, item.spec,
                     item.quantity || 0, item.unit, item.unitPrice || 0, item.amount || 0, item.note

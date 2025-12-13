@@ -746,6 +746,18 @@ select::-webkit-scrollbar-thumb:hover {
   border: 1px solid rgba(22, 196, 130, 0.4);
 }
 
+.pill-warning {
+  background: #0b1324;
+  color: #67e8f9;
+  border: 1px solid rgba(103, 232, 249, 0.55);
+}
+
+.pill-danger {
+  background: rgba(239, 68, 68, 0.16);
+  color: #ff6b6b;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
 .pill-gray {
   background: rgba(255, 255, 255, 0.08);
   color: #9fb2cc;
@@ -882,6 +894,7 @@ select::-webkit-scrollbar-thumb:hover {
   padding: 1rem;
   border-radius: 8px;
   line-height: 1.6;
+  white-space: pre-line;
   border: 1px solid rgba(255, 255, 255, 0.05);
 }
 

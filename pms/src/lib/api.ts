@@ -3,7 +3,10 @@ import axios from 'axios'
 
 // API 서버 기본 URL (환경 변수 또는 기본값)
 // API 서버 기본 URL (환경 변수 또는 기본값)
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? '/api' : 'http://localhost:3007/api')
+// API Base URL
+// - Prod: Hosting rewrite(/api/** -> function api) uses same-origin '/api'
+// - Dev: Use '/api' and let Vite proxy decide target (local server or deployed)
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api'
 
 // Axios 인스턴스 생성
 export const apiClient = axios.create({
@@ -51,4 +54,3 @@ apiClient.interceptors.response.use(
         return Promise.reject(error)
     }
 )
-

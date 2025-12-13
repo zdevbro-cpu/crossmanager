@@ -169,7 +169,7 @@ function ReportsPage() {
           </div>
         </div>
 
-        <div className="table reports-table custom-scroll" style={{ overflowY: 'auto', flex: 1, paddingRight: '4px' }}>
+        <div className="table reports-table custom-scroll" style={{ overflowY: 'auto', flex: 1, paddingRight: '4px', display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', gap: '0.35rem' }}>
           <div className="table-row table-header" style={{ position: 'sticky', top: 0, zIndex: 10, background: '#1e293b', margin: 0, borderRadius: '6px 6px 0 0' }}>
             <span style={{ flex: 2 }}>제목</span>
             <span style={{ flex: 1 }}>날짜</span>
@@ -184,7 +184,7 @@ function ReportsPage() {
               key={r.id}
               className="table-row hover-effect"
               onClick={() => handleRowClick(r)}
-              style={{ cursor: 'pointer' }}
+              style={{ cursor: 'pointer', height: '54px', alignItems: 'center', flex: '0 0 auto' }}
             >
               <span style={{ flex: 2, fontWeight: 500, color: '#e2e8f0' }}>{r.title}</span>
               <span style={{ flex: 1 }}>{r.reportDate?.slice(0, 10)}</span>

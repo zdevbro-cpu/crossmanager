@@ -5,22 +5,41 @@ const fs = require('fs')
 const admin = require('firebase-admin')
 const { validate: isUuid } = require('uuid')
 
+function resolveBucketName() {
+  if (process.env.FIREBASE_STORAGE_BUCKET) return process.env.FIREBASE_STORAGE_BUCKET
+
+  try {
+    if (process.env.FIREBASE_CONFIG) {
+      const config = JSON.parse(process.env.FIREBASE_CONFIG)
+      if (config.storageBucket) {
+        const bucket = String(config.storageBucket)
+        return bucket.endsWith('.firebasestorage.app')
+          ? bucket.replace(/\.firebasestorage\.app$/, '.appspot.com')
+          : bucket
+      }
+    }
+  } catch (e) { }
+
+  return 'crossmanager-1e21c.appspot.com'
+}
+
 // Initialize Firebase Admin if not already initialized
 if (!admin.apps.length) {
-  admin.initializeApp()
+  admin.initializeApp({ storageBucket: resolveBucketName() })
 }
 
 // Determine bucket name from env or fallback
 // Note: In Cloud Functions Gen 2, FIREBASE_CONFIG might be present.
-let bucketName = 'crossmanager-1e21c.firebasestorage.app' // Standard Firebase bucket
-try {
-  const config = JSON.parse(process.env.FIREBASE_CONFIG)
-  if (config.storageBucket) bucketName = config.storageBucket
-} catch (e) { }
+let bucketName = resolveBucketName()
 
 // Forcing explicit bucket name to avoid "bucket not found"
 console.log('Using Storage Bucket:', bucketName)
-const bucket = admin.storage().bucket(bucketName)
+let bucket
+try {
+  bucket = admin.storage().bucket(bucketName)
+} catch (e) {
+  console.warn('Bucket init failed:', e.message)
+}
 
 const createDocumentsRouter = (pool, uploadsDir) => {
   const router = express.Router()
@@ -108,17 +127,36 @@ const createDocumentsRouter = (pool, uploadsDir) => {
       // Fix projectId "null" string issue
       const pId = (projectId === 'null' || !projectId) ? null : projectId
 
-      // --- Upload to Firebase Storage ---
+      // --- Upload to Firebase Storage (fallback: store Base64 in DB) ---
       const destination = `documents/${pId || 'global'}/${file.filename}`
-      await bucket.upload(file.path, {
-        destination: destination,
-        metadata: {
-          contentType: file.mimeType,
-        }
-      })
+      let dbFilePath = destination
+      let fileContentBase64 = null
 
-      // Remove temp file
-      try { fs.unlinkSync(file.path) } catch (e) { }
+      if (bucket) {
+        try {
+          await bucket.upload(file.path, {
+            destination: destination,
+            metadata: {
+              contentType: file.mimeType,
+            }
+          })
+          try { fs.unlinkSync(file.path) } catch (e) { }
+        } catch (e) {
+          console.warn(`Storage Upload Failed (fallback to DB): ${e.message}`)
+          dbFilePath = file.filename
+        }
+      } else {
+        dbFilePath = file.filename
+      }
+
+      if (dbFilePath === file.filename) {
+        try {
+          fileContentBase64 = fs.readFileSync(file.path).toString('base64')
+          try { fs.unlinkSync(file.path) } catch (e) { }
+        } catch (e) {
+          console.warn('Failed to read local file for DB fallback:', e.message)
+        }
+      }
       // ----------------------------------
 
       await client.query('BEGIN')
@@ -136,9 +174,9 @@ const createDocumentsRouter = (pool, uploadsDir) => {
       // Insert into document_versions table
       await client.query(`
         INSERT INTO document_versions (
-          document_id, version, file_path, file_size, change_log
-        ) VALUES ($1, 'v1', $2, $3, 'Initial upload')
-      `, [docId, destination, file.size])
+          document_id, version, file_path, file_size, change_log, file_content
+        ) VALUES ($1, 'v1', $2, $3, 'Initial upload', $4)
+      `, [docId, dbFilePath, file.size, fileContentBase64])
 
       await client.query('COMMIT')
 
@@ -197,16 +235,36 @@ const createDocumentsRouter = (pool, uploadsDir) => {
         nextVer = `v${currentNum + 1}`
       }
 
-      // --- Upload to Firebase Storage ---
+      // --- Upload to Firebase Storage (fallback: store Base64 in DB) ---
       const destination = `documents/${docRes.rows[0].project_id || 'global'}/${file.filename}`
-      await bucket.upload(file.path, {
-        destination: destination,
-        metadata: {
-          contentType: file.mimeType,
+      let dbFilePath = destination
+      let fileContentBase64 = null
+
+      if (bucket) {
+        try {
+          await bucket.upload(file.path, {
+            destination: destination,
+            metadata: {
+              contentType: file.mimeType,
+            }
+          })
+          try { fs.unlinkSync(file.path) } catch (e) { }
+        } catch (e) {
+          console.warn(`Storage Upload Failed (fallback to DB): ${e.message}`)
+          dbFilePath = file.filename
         }
-      })
-      // Remove temp file
-      try { fs.unlinkSync(file.path) } catch (e) { }
+      } else {
+        dbFilePath = file.filename
+      }
+
+      if (dbFilePath === file.filename) {
+        try {
+          fileContentBase64 = fs.readFileSync(file.path).toString('base64')
+          try { fs.unlinkSync(file.path) } catch (e) { }
+        } catch (e) {
+          console.warn('Failed to read local file for DB fallback:', e.message)
+        }
+      }
       // ----------------------------------
 
       await client.query('BEGIN')
@@ -214,9 +272,9 @@ const createDocumentsRouter = (pool, uploadsDir) => {
       // Insert version
       await client.query(`
         INSERT INTO document_versions (
-          document_id, version, file_path, file_size, change_log
-        ) VALUES ($1, $2, $3, $4, $5)
-      `, [id, nextVer, destination, file.size, changeLog])
+          document_id, version, file_path, file_size, change_log, file_content
+        ) VALUES ($1, $2, $3, $4, $5, $6)
+      `, [id, nextVer, dbFilePath, file.size, changeLog, fileContentBase64])
 
       // Update document current_version
       await client.query(`

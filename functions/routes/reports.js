@@ -1,6 +1,52 @@
 const express = require('express')
 const router = express.Router()
 
+function countDelayedTasks(activeTasks = []) {
+    if (!Array.isArray(activeTasks)) return 0
+
+    return activeTasks.filter((task) => {
+        const delayRisk = task?.delay_risk
+        const name = String(task?.name || '')
+
+        return (
+            delayRisk === true ||
+            delayRisk === 'HIGH' ||
+            delayRisk === 'DELAY' ||
+            name.includes('지연') ||
+            name.toLowerCase().includes('delay')
+        )
+    }).length
+}
+
+function summaryPrefix(type) {
+    if (type === 'WEEKLY') return '금주'
+    if (type === 'MONTHLY') return '금월'
+    return '금일'
+}
+
+function generateStructuredSummary({ type, pms, sms }) {
+    const prefix = summaryPrefix(type)
+    const totalActive = Number(pms?.totalActive || 0)
+    const delayedCount = countDelayedTasks(pms?.activeTasks || [])
+    const driCount = Array.isArray(sms?.dris) ? sms.dris.length : 0
+    const incidentCount = Array.isArray(sms?.incidents) ? sms.incidents.length : 0
+
+    const lines = []
+
+    if (totalActive > 0) lines.push(`* ${prefix} ${totalActive}건 작업진행`)
+    else lines.push(`* ${prefix} 작업진행 없음`)
+
+    if (delayedCount > 0) lines.push(`* 작업지연 ${delayedCount}건 발생`)
+    else lines.push(`* 작업지연 없음`)
+
+    if (driCount > 0) lines.push(`* TBM/DRI 시행: ${driCount}건`)
+    else lines.push(`* TBM/DRI 시행 없음`)
+
+    lines.push(`* 안전사고 발생 : ${incidentCount}건`)
+
+    return lines.join('\n')
+}
+
 module.exports = (pool) => {
 
     // --- Template APIs ---
@@ -134,7 +180,7 @@ module.exports = (pool) => {
 
             const aggregatedData = {
                 type, // Store report type
-                summary: 'Auto-generated report',
+                summary: '',
                 weather: 'Sunny (Mock)', // Placeholder
                 pms: {
                     activeTasks: pmsRes.rows,
@@ -157,6 +203,8 @@ module.exports = (pool) => {
                     openIncidents: openIssuesRes.rows
                 }
             }
+
+            aggregatedData.summary = generateStructuredSummary(aggregatedData)
             // --- DATA AGGREGATION END ---
 
             const insertQuery = `

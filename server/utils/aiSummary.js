@@ -1,97 +1,125 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai')
 
-// Gemini API 초기화
+// Gemini API init
 const genAI = process.env.GEMINI_API_KEY
     ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
     : null
 
+function countDelayedTasks(activeTasks = []) {
+    if (!Array.isArray(activeTasks)) return 0
+
+    return activeTasks.filter((task) => {
+        const delayRisk = task?.delay_risk
+        const name = String(task?.name || '')
+
+        return (
+            delayRisk === true ||
+            delayRisk === 'HIGH' ||
+            delayRisk === 'DELAY' ||
+            name.includes('지연') ||
+            name.toLowerCase().includes('delay')
+        )
+    }).length
+}
+
+function summaryPrefix(type) {
+    if (type === 'WEEKLY') return '금주'
+    if (type === 'MONTHLY') return '금월'
+    return '금일'
+}
+
+function generateStructuredSummary(reportData) {
+    const prefix = summaryPrefix(reportData?.type)
+    const totalActive = Number(reportData?.pms?.totalActive || 0)
+    const delayedCount = countDelayedTasks(reportData?.pms?.activeTasks || [])
+    const driCount = Array.isArray(reportData?.sms?.dris) ? reportData.sms.dris.length : 0
+    const incidentCount = Array.isArray(reportData?.sms?.incidents) ? reportData.sms.incidents.length : 0
+
+    const lines = []
+
+    if (totalActive > 0) lines.push(`* ${prefix} ${totalActive}건 작업진행`)
+    else lines.push(`* ${prefix} 작업진행 없음`)
+
+    if (delayedCount > 0) lines.push(`* 작업지연 ${delayedCount}건 발생`)
+    else lines.push(`* 작업지연 없음`)
+
+    if (driCount > 0) lines.push(`* TBM/DRI 시행: ${driCount}건`)
+    else lines.push(`* TBM/DRI 시행 없음`)
+
+    lines.push(`* 안전사고 발생 : ${incidentCount}건`)
+
+    return lines.join('\n')
+}
+
+function normalizeBullets(text) {
+    if (!text) return ''
+
+    const lines = String(text)
+        .replace(/\r\n/g, '\n')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+
+    if (lines.length === 0) return ''
+
+    return lines
+        .map((line) => {
+            const normalized = line.replace(/^[-•*]\s*/, '')
+            return `* ${normalized}`
+        })
+        .join('\n')
+}
+
 /**
- * Generate AI summary for report data
- * @param {Object} reportData - Aggregated report data
- * @returns {Promise<string>} - Generated summary
+ * Generate report summary
+ * - Default: structured bullets (deterministic)
+ * - Optional: Gemini (set REPORT_SUMMARY_MODE=GEMINI)
  */
 async function generateReportSummary(reportData) {
+    const structured = generateStructuredSummary(reportData)
+    const mode = (process.env.REPORT_SUMMARY_MODE || 'STRUCTURED').toUpperCase()
+
+    if (mode !== 'GEMINI') return structured
+
     if (!genAI) {
-        console.warn('Gemini API key not configured, using fallback summary')
-        return generateFallbackSummary(reportData)
+        console.warn('Gemini API key not configured, using structured summary')
+        return structured
     }
 
     try {
         const model = genAI.getGenerativeModel({ model: 'gemini-pro' })
 
+        const prefix = summaryPrefix(reportData?.type)
+        const totalActive = Number(reportData?.pms?.totalActive || 0)
+        const delayedCount = countDelayedTasks(reportData?.pms?.activeTasks || [])
+        const driCount = Array.isArray(reportData?.sms?.dris) ? reportData.sms.dris.length : 0
+        const incidentCount = Array.isArray(reportData?.sms?.incidents) ? reportData.sms.incidents.length : 0
+
         const prompt = `
-다음은 건설 현장의 일일 작업 데이터입니다. 이를 바탕으로 간결한 업무 요약을 작성해주세요.
+아래 JSON 데이터를 참고해서 "${prefix} 작업 요약"을 한국어로 작성해 주세요.
+Data: ${JSON.stringify(reportData)}
 
-**공정 현황 (PMS):**
-- 진행 중인 작업: ${reportData.pms.totalActive}건
-- 작업 목록: ${reportData.pms.activeTasks.map(t => `${t.name} (${t.progress}%)`).join(', ')}
+출력은 반드시 아래 4줄 형식(각 줄은 NEW LINE)으로만 답해 주세요. 문장을 추가하거나 합치지 마세요.
+- 첫 글자는 반드시 "* " 로 시작
+- 아래 숫자 값은 데이터에 맞게 채움
 
-**안전 활동 (SMS):**
-- TBM/DRI 시행: ${reportData.sms.dris.length}건
-- 사고/이슈: ${reportData.sms.incidents.length}건
-- 안전 등급: ${reportData.sms.safetyStatus}
-
-**장비 현황 (EMS):**
-- 투입 장비: ${reportData.ems.deployedCount}대
-
-**폐기물 관리 (SWMS):**
-- 발생 건수: ${reportData.swms.totalCount}건
-
-**요약 작성 지침:**
-1. 2-3문장으로 간결하게 작성
-2. 주요 진행 사항과 특이사항 위주로 요약
-3. 지연 작업이나 안전 이슈가 있으면 반드시 언급
-4. 전문적이고 공식적인 톤 유지
-
-요약:
-`
+형식(예시):
+* ${prefix} ${totalActive}건 작업진행
+* 작업지연 ${delayedCount}건 발생
+* TBM/DRI 시행: ${driCount}건
+* 안전사고 발생 : ${incidentCount}건
+        `.trim()
 
         const result = await model.generateContent(prompt)
         const response = await result.response
-        const summary = response.text().trim()
+        const text = normalizeBullets(response.text())
 
-        return summary || generateFallbackSummary(reportData)
-
+        return text || structured
     } catch (error) {
         console.error('Gemini API error:', error.message)
-        return generateFallbackSummary(reportData)
+        return structured
     }
-}
-
-/**
- * Generate fallback summary when AI is unavailable
- */
-function generateFallbackSummary(reportData) {
-    const parts = []
-
-    // 공정 현황
-    if (reportData.pms.totalActive > 0) {
-        const delayedTasks = reportData.pms.activeTasks.filter(t =>
-            t.delay_risk === true || t.delay_risk === 'HIGH' || t.name.includes('지연')
-        )
-
-        if (delayedTasks.length > 0) {
-            parts.push(`금일 ${reportData.pms.totalActive}건의 작업이 진행 중이며, ${delayedTasks.length}건의 지연 작업이 발생했습니다.`)
-        } else {
-            parts.push(`금일 ${reportData.pms.totalActive}건의 작업이 정상적으로 진행 중입니다.`)
-        }
-    } else {
-        parts.push('금일 진행 중인 작업이 없습니다.')
-    }
-
-    // 안전 현황
-    if (reportData.sms.incidents.length > 0) {
-        parts.push(`안전 이슈 ${reportData.sms.incidents.length}건이 발생하여 즉시 조치가 필요합니다.`)
-    } else {
-        parts.push(`TBM/DRI ${reportData.sms.dris.length}건을 시행하였으며, 안전사고는 발생하지 않았습니다.`)
-    }
-
-    // 장비 현황
-    if (reportData.ems.deployedCount > 0) {
-        parts.push(`현장에 ${reportData.ems.deployedCount}대의 장비가 투입되었습니다.`)
-    }
-
-    return parts.join(' ')
 }
 
 module.exports = { generateReportSummary }
+
