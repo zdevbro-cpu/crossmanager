@@ -51,3 +51,30 @@
 - 계약/견적 코드 자동생성 규칙 확정 및 프로젝트 코드와 동기화.
 - 전자결재(승인선), 출력 템플릿(PDF/HTML) 연동, 세금/통화 옵션.
 - 변경이력(diff) 비교 및 규정 템플릿 중앙 관리(서버 캐싱).***
+
+## 8. 파일 저장 방식 개선 (2025-12-13 진행 중)
+
+### 현재 문제점
+- **계약서 첨부파일**: CloudSQL의 `attachment` JSONB 컬럼에 저장
+- **비용 문제**: CloudSQL 저장 비용 ($0.17/GB/월) vs Firebase Storage ($0.026/GB/월)
+- **성능 문제**: 대용량 파일 시 DB 쿼리 속도 저하
+
+### 개선 방향
+- **Documents 모듈 패턴 적용**: Firebase Storage에 파일 업로드
+- **DB 스키마 변경**:
+  ```sql
+  ALTER TABLE contracts ADD COLUMN attachment_path TEXT;
+  ALTER TABLE contracts ADD COLUMN attachment_size BIGINT;
+  ALTER TABLE contracts ADD COLUMN attachment_name VARCHAR(255);
+  ```
+- **비용 절감**: 약 85% 저장 비용 절감 예상
+
+### 구현 계획
+1. ✅ 분석 완료 및 계획 수립
+2. 🔄 DB 스키마 변경 (진행 중)
+3. ⏳ Backend API 수정 (Firebase Storage 통합)
+4. ⏳ Frontend 파일 업로드 로직 수정
+5. ⏳ 테스트 및 배포
+
+**상세 계획**: `implementation_plan.md` 참조
+
