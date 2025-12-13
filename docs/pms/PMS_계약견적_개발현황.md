@@ -71,10 +71,31 @@
 
 ### 구현 계획
 1. ✅ 분석 완료 및 계획 수립
-2. 🔄 DB 스키마 변경 (진행 중)
-3. ⏳ Backend API 수정 (Firebase Storage 통합)
-4. ⏳ Frontend 파일 업로드 로직 수정
-5. ⏳ 테스트 및 배포
+2. ✅ DB 스키마 변경 (완료 - 2025-12-13)
+   - `attachment_path`, `attachment_size`, `attachment_name` 컬럼 추가
+   - Migration 스크립트 생성 및 실행
+3. ✅ Backend API 수정 (완료 - 2025-12-13)
+   - Firebase Admin SDK 초기화
+   - Busboy 파일 업로드 처리 추가
+   - POST `/api/contracts` 파일 업로드 지원
+   - PUT `/api/contracts/:id` 파일 업데이트 지원
+   - GET `/api/contracts/:id` Signed URL 반환
+4. ⏳ Frontend 파일 업로드 로직 수정 (대기 중)
+5. ⏳ 테스트 및 배포 (대기 중)
 
 **상세 계획**: `implementation_plan.md` 참조
+
+### 구현 완료 내역 (2025-12-13)
+
+**Backend API (`server/routes/contracts.js`):**
+- ✅ Firebase Storage 통합 완료
+- ✅ Multipart/form-data 파일 업로드 지원
+- ✅ Storage 경로: `contracts/{projectId}/{filename}`
+- ✅ Signed URL 생성 (1시간 만료)
+- ✅ 기존 JSONB `attachment` 필드 유지 (하위 호환성)
+
+**다음 단계:**
+- Frontend 파일 업로드 UI 추가
+- 로컬 테스트 후 배포
+
 
