@@ -1,5 +1,6 @@
 const express = require('express')
 const router = express.Router()
+const { generateReportSummary } = require('../utils/aiSummary')
 
 module.exports = (pool) => {
 
@@ -134,7 +135,7 @@ module.exports = (pool) => {
 
             const aggregatedData = {
                 type, // Store report type
-                summary: 'Auto-generated report',
+                summary: 'Auto-generated report', // Will be replaced by AI
                 weather: 'Sunny (Mock)', // Placeholder
                 pms: {
                     activeTasks: pmsRes.rows,
@@ -156,6 +157,15 @@ module.exports = (pool) => {
                 issues: {
                     openIncidents: openIssuesRes.rows
                 }
+            }
+
+            // Generate AI summary
+            try {
+                const aiSummary = await generateReportSummary(aggregatedData)
+                aggregatedData.summary = aiSummary
+            } catch (error) {
+                console.error('AI summary generation failed:', error)
+                // Keep default summary
             }
             // --- DATA AGGREGATION END ---
 
