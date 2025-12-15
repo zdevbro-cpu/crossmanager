@@ -62,8 +62,7 @@ export default function PricingDecisionCard(props: {
     const inv = props.inventoryHeat || []
     const name = selected?.materialName
     if (!name) return 0
-    const row = inv.find(r => r.material === name)
-    return row ? Number(row.quantity || 0) : 0
+    return inv.filter(r => r.material === name).reduce((acc, r) => acc + Number(r.quantity || 0), 0)
   }, [props.inventoryHeat, selected?.materialName])
 
   const impact = useMemo(() => {
@@ -203,4 +202,3 @@ export default function PricingDecisionCard(props: {
     </section>
   )
 }
-

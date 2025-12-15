@@ -92,6 +92,12 @@ module.exports = (pool) => {
                 )
             `);
 
+            // Optional columns used by dashboard heatmap/zone views (safe no-op if already present)
+            await pool.query(`ALTER TABLE swms_warehouses ADD COLUMN IF NOT EXISTS code VARCHAR(50)`)
+            await pool.query(`ALTER TABLE swms_warehouses ADD COLUMN IF NOT EXISTS capacity NUMERIC(15,2)`)
+            await pool.query(`ALTER TABLE swms_warehouses ADD COLUMN IF NOT EXISTS unit VARCHAR(20) DEFAULT '톤'`)
+            await pool.query(`ALTER TABLE swms_warehouses ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE`)
+
             // Generations
             await pool.query(`
                 CREATE TABLE IF NOT EXISTS swms_generations (
@@ -270,18 +276,64 @@ module.exports = (pool) => {
 
     // --- Site (Factory/Yard) Routes ---
     router.get('/sites/my', async (req, res) => {
-        // Return fixed list of factories/yards for SWMS context
+        // Prefer DB-backed sites when available so SWMS siteId matches DB foreign keys (UUID 포함).
+        try {
+            const q = `
+                SELECT
+                    s.id::text AS id,
+                    s.company_id::text AS company_id,
+                    s.code,
+                    s.name,
+                    s.type,
+                    s.address,
+                    COALESCE(s.is_active, TRUE) AS is_active,
+                    c.name AS company_name,
+                    c.code AS company_code
+                FROM swms_sites s
+                LEFT JOIN swms_companies c ON c.id = s.company_id
+                WHERE COALESCE(s.is_active, TRUE) = TRUE
+                ORDER BY s.created_at DESC
+                LIMIT 50
+            `
+            const { rows } = await pool.query(q)
+            if (rows.length > 0) {
+                const companyRow = rows.find(r => r.company_id) || rows[0]
+                res.json({
+                    company: {
+                        id: companyRow.company_id || 'CMD-001',
+                        code: companyRow.company_code || 'CMD',
+                        name: companyRow.company_name || 'Cross Material Dynamics',
+                    },
+                    sites: rows.map(r => ({
+                        id: r.id,
+                        company_id: r.company_id || 'CMD-001',
+                        code: r.code || r.id,
+                        name: r.name || r.code || r.id,
+                        type: r.type || 'FACTORY',
+                        address: r.address || '',
+                        is_active: !!r.is_active,
+                        company_name: r.company_name || 'Cross Material Dynamics',
+                    }))
+                })
+                return
+            }
+        } catch (e) {
+            // Non-fatal: fall back to static sites for dev/demo.
+            console.warn('[SWMS] /sites/my DB lookup failed, using fallback:', e.message)
+        }
+
+        // Fallback: Return fixed list of factories/yards for SWMS context
         // This decouples SWMS "Sites" from PMS "Projects"
         const sites = [
-            { id: 'FAC-001', name: '인천 본사 공장', company_name: 'Cross Material Dynamics', address: '인천광역시 서구' },
-            { id: 'YARD-001', name: '파주 야적장', company_name: 'Cross Material Dynamics', address: '경기도 파주시' },
-            { id: 'FAC-002', name: '부산 제2공장', company_name: 'Cross Material Dynamics', address: '부산광역시 강서구' }
-        ];
+            { id: 'FAC-001', company_id: 'CMD-001', code: 'FAC-001', name: '인천 본사 공장', type: 'FACTORY', address: '인천광역시 서구', is_active: true, company_name: 'Cross Material Dynamics' },
+            { id: 'YARD-001', company_id: 'CMD-001', code: 'YARD-001', name: '파주 야적장', type: 'YARD', address: '경기도 파주시', is_active: true, company_name: 'Cross Material Dynamics' },
+            { id: 'FAC-002', company_id: 'CMD-001', code: 'FAC-002', name: '부산 제2공장', type: 'FACTORY', address: '부산광역시 강서구', is_active: true, company_name: 'Cross Material Dynamics' },
+        ]
 
         res.json({
-            company: { id: 'CMD-001', name: 'Cross Material Dynamics' },
-            sites: sites
-        });
+            company: { id: 'CMD-001', code: 'CMD', name: 'Cross Material Dynamics' },
+            sites
+        })
     });
 
     // --- Generation Routes ---

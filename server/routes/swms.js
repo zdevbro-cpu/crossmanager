@@ -88,6 +88,8 @@ module.exports = (pool) => {
                     site_id VARCHAR(100), -- Can be 'FAC-001'
                     name VARCHAR(100) NOT NULL,
                     type VARCHAR(50) DEFAULT 'General',
+                    capacity DECIMAL(15,2),
+                    unit VARCHAR(20) DEFAULT '톤',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             `);
@@ -141,9 +143,10 @@ module.exports = (pool) => {
                     site_id VARCHAR(100),
                     warehouse_id VARCHAR(100), 
                     material_type_id VARCHAR(100) REFERENCES swms_material_types(id),
+                    grade TEXT DEFAULT 'A',
                     quantity DECIMAL(12, 2) DEFAULT 0,
                     last_updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE(site_id, warehouse_id, material_type_id)
+                    UNIQUE(site_id, warehouse_id, material_type_id, grade)
                 )
             `);
 
@@ -172,6 +175,7 @@ module.exports = (pool) => {
                     warehouse_id VARCHAR(100),
                     vendor_id VARCHAR(100) REFERENCES swms_vendors(id),
                     material_type_id VARCHAR(100) REFERENCES swms_material_types(id),
+                    grade TEXT DEFAULT 'A',
                     quantity DECIMAL(12, 2) DEFAULT 0,
                     unit_price DECIMAL(15, 2) DEFAULT 0,
                     total_amount DECIMAL(15, 2) DEFAULT 0,
@@ -190,6 +194,7 @@ module.exports = (pool) => {
                     warehouse_id VARCHAR(100),
                     vendor_id VARCHAR(100) REFERENCES swms_vendors(id),
                     material_type_id VARCHAR(100) REFERENCES swms_material_types(id),
+                    grade TEXT DEFAULT 'A',
                     quantity DECIMAL(12, 2) DEFAULT 0,
                     unit_price DECIMAL(15, 2) DEFAULT 0,
                     total_amount DECIMAL(15, 2) DEFAULT 0,
@@ -270,18 +275,64 @@ module.exports = (pool) => {
 
     // --- Site (Factory/Yard) Routes ---
     router.get('/sites/my', async (req, res) => {
-        // Return fixed list of factories/yards for SWMS context
+        // Prefer DB-backed sites when available so SWMS siteId matches DB foreign keys (UUID 포함).
+        try {
+            const q = `
+                SELECT
+                    s.id::text AS id,
+                    s.company_id::text AS company_id,
+                    s.code,
+                    s.name,
+                    s.type,
+                    s.address,
+                    COALESCE(s.is_active, TRUE) AS is_active,
+                    c.name AS company_name,
+                    c.code AS company_code
+                FROM swms_sites s
+                LEFT JOIN swms_companies c ON c.id = s.company_id
+                WHERE COALESCE(s.is_active, TRUE) = TRUE
+                ORDER BY s.created_at DESC
+                LIMIT 50
+            `
+            const { rows } = await pool.query(q)
+            if (rows.length > 0) {
+                const companyRow = rows.find(r => r.company_id) || rows[0]
+                res.json({
+                    company: {
+                        id: companyRow.company_id || 'CMD-001',
+                        code: companyRow.company_code || 'CMD',
+                        name: companyRow.company_name || 'Cross Material Dynamics',
+                    },
+                    sites: rows.map(r => ({
+                        id: r.id,
+                        company_id: r.company_id || 'CMD-001',
+                        code: r.code || r.id,
+                        name: r.name || r.code || r.id,
+                        type: r.type || 'FACTORY',
+                        address: r.address || '',
+                        is_active: !!r.is_active,
+                        company_name: r.company_name || 'Cross Material Dynamics',
+                    }))
+                })
+                return
+            }
+        } catch (e) {
+            // Non-fatal: fall back to static sites for dev/demo.
+            console.warn('[SWMS] /sites/my DB lookup failed, using fallback:', e.message)
+        }
+
+        // Fallback: Return fixed list of factories/yards for SWMS context
         // This decouples SWMS "Sites" from PMS "Projects"
         const sites = [
-            { id: 'FAC-001', name: '인천 본사 공장', company_name: 'Cross Material Dynamics', address: '인천광역시 서구' },
-            { id: 'YARD-001', name: '파주 야적장', company_name: 'Cross Material Dynamics', address: '경기도 파주시' },
-            { id: 'FAC-002', name: '부산 제2공장', company_name: 'Cross Material Dynamics', address: '부산광역시 강서구' }
-        ];
+            { id: 'FAC-001', company_id: 'CMD-001', code: 'FAC-001', name: '인천 본사 공장', type: 'FACTORY', address: '인천광역시 서구', is_active: true, company_name: 'Cross Material Dynamics' },
+            { id: 'YARD-001', company_id: 'CMD-001', code: 'YARD-001', name: '파주 야적장', type: 'YARD', address: '경기도 파주시', is_active: true, company_name: 'Cross Material Dynamics' },
+            { id: 'FAC-002', company_id: 'CMD-001', code: 'FAC-002', name: '부산 제2공장', type: 'FACTORY', address: '부산광역시 강서구', is_active: true, company_name: 'Cross Material Dynamics' },
+        ]
 
         res.json({
-            company: { id: 'CMD-001', name: 'Cross Material Dynamics' },
-            sites: sites
-        });
+            company: { id: 'CMD-001', code: 'CMD', name: 'Cross Material Dynamics' },
+            sites
+        })
     });
 
     // --- Generation Routes ---
@@ -424,7 +475,8 @@ module.exports = (pool) => {
         const client = await pool.connect();
         try {
             await client.query('BEGIN');
-            const { site_id, warehouse_id, material_type_id, quantity, reason, adjustment_type, adjustment_date } = req.body;
+            const { site_id, warehouse_id, material_type_id, grade, quantity, reason, adjustment_type, adjustment_date } = req.body;
+            const effectiveGrade = grade ? String(grade) : 'A';
 
             await client.query(`
                 INSERT INTO swms_inventory_adjustments (site_id, warehouse_id, material_type_id, quantity, reason, adjustment_type, adjustment_date)
@@ -433,11 +485,11 @@ module.exports = (pool) => {
 
             // Upsert
             await client.query(`
-                INSERT INTO swms_inventory (site_id, warehouse_id, material_type_id, quantity, last_updated_at)
-                VALUES ($1, $2, $3, $4, NOW())
-                ON CONFLICT (site_id, warehouse_id, material_type_id) 
+                INSERT INTO swms_inventory (site_id, warehouse_id, material_type_id, grade, quantity, last_updated_at)
+                VALUES ($1, $2, $3, $4, $5, NOW())
+                ON CONFLICT (site_id, warehouse_id, material_type_id, grade) 
                 DO UPDATE SET quantity = swms_inventory.quantity + EXCLUDED.quantity, last_updated_at = NOW()
-            `, [site_id, warehouse_id, material_type_id, quantity]);
+            `, [site_id, warehouse_id, material_type_id, effectiveGrade, quantity]);
 
             await client.query('COMMIT');
             res.json({ success: true });
@@ -474,22 +526,23 @@ module.exports = (pool) => {
         const client = await pool.connect();
         try {
             await client.query('BEGIN');
-            const { site_id, project_id, inbound_date, warehouse_id, vendor_id, material_type_id, quantity, unit_price } = req.body;
+            const { site_id, project_id, inbound_date, warehouse_id, vendor_id, material_type_id, grade, quantity, unit_price } = req.body;
+            const effectiveGrade = grade ? String(grade) : 'A';
             const total_amount = parseFloat(quantity) * parseFloat(unit_price || 0);
 
             const { rows } = await client.query(`
-                INSERT INTO swms_inbounds (site_id, project_id, inbound_date, warehouse_id, vendor_id, material_type_id, quantity, unit_price, total_amount, status)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'CONFIRMED')
+                INSERT INTO swms_inbounds (site_id, project_id, inbound_date, warehouse_id, vendor_id, material_type_id, grade, quantity, unit_price, total_amount, status)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'CONFIRMED')
                 RETURNING *
-            `, [site_id, project_id, inbound_date, warehouse_id, vendor_id, material_type_id, quantity, unit_price, total_amount]);
+            `, [site_id, project_id, inbound_date, warehouse_id, vendor_id, material_type_id, effectiveGrade, quantity, unit_price, total_amount]);
 
             // Increase Inventory
             await client.query(`
-                INSERT INTO swms_inventory (site_id, warehouse_id, material_type_id, quantity, last_updated_at)
-                VALUES ($1, $2, $3, $4, NOW())
-                ON CONFLICT (site_id, warehouse_id, material_type_id) 
+                INSERT INTO swms_inventory (site_id, warehouse_id, material_type_id, grade, quantity, last_updated_at)
+                VALUES ($1, $2, $3, $4, $5, NOW())
+                ON CONFLICT (site_id, warehouse_id, material_type_id, grade) 
                 DO UPDATE SET quantity = swms_inventory.quantity + EXCLUDED.quantity, last_updated_at = NOW()
-            `, [site_id, warehouse_id, material_type_id, quantity]);
+            `, [site_id, warehouse_id, material_type_id, effectiveGrade, quantity]);
 
             await client.query('COMMIT');
             res.status(201).json(rows[0]);
@@ -519,11 +572,11 @@ module.exports = (pool) => {
                 // Upsert to handle potential negative if anomaly, but typically update
                 // Note: We subtract
                 await client.query(`
-                    INSERT INTO swms_inventory (site_id, warehouse_id, material_type_id, quantity, last_updated_at)
-                    VALUES ($1, $2, $3, $4, NOW())
-                    ON CONFLICT (site_id, warehouse_id, material_type_id) 
+                    INSERT INTO swms_inventory (site_id, warehouse_id, material_type_id, grade, quantity, last_updated_at)
+                    VALUES ($1, $2, $3, $4, $5, NOW())
+                    ON CONFLICT (site_id, warehouse_id, material_type_id, grade) 
                     DO UPDATE SET quantity = swms_inventory.quantity - EXCLUDED.quantity, last_updated_at = NOW()
-                `, [inbound.site_id, inbound.warehouse_id, inbound.material_type_id, inbound.quantity]); // Pass positive quantity
+                `, [inbound.site_id, inbound.warehouse_id, inbound.material_type_id, inbound.grade || 'A', inbound.quantity]); // Pass positive quantity
             }
 
             await client.query('COMMIT');
@@ -559,14 +612,15 @@ module.exports = (pool) => {
 
     router.post('/outbounds', async (req, res) => {
         try {
-            const { site_id, project_id, outbound_date, warehouse_id, vendor_id, material_type_id, quantity, unit_price } = req.body;
+            const { site_id, project_id, outbound_date, warehouse_id, vendor_id, material_type_id, grade, quantity, unit_price } = req.body;
+            const effectiveGrade = grade ? String(grade) : 'A';
             const total_amount = parseFloat(quantity) * parseFloat(unit_price);
 
             const { rows } = await pool.query(`
-                INSERT INTO swms_outbounds (site_id, project_id, outbound_date, warehouse_id, vendor_id, material_type_id, quantity, unit_price, total_amount, status)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'PENDING')
+                INSERT INTO swms_outbounds (site_id, project_id, outbound_date, warehouse_id, vendor_id, material_type_id, grade, quantity, unit_price, total_amount, status)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'PENDING')
                 RETURNING *
-            `, [site_id, project_id, outbound_date, warehouse_id, vendor_id, material_type_id, quantity, unit_price, total_amount]);
+            `, [site_id, project_id, outbound_date, warehouse_id, vendor_id, material_type_id, effectiveGrade, quantity, unit_price, total_amount]);
             res.status(201).json(rows[0]);
         } catch (e) { res.status(500).json({ error: e.message }); }
     });
@@ -584,11 +638,11 @@ module.exports = (pool) => {
             // Update Inventory (Decrease)
             if (outbound.warehouse_id && outbound.material_type_id) {
                 await client.query(`
-                    INSERT INTO swms_inventory (site_id, warehouse_id, material_type_id, quantity, last_updated_at)
-                    VALUES ($1, $2, $3, $4, NOW())
-                    ON CONFLICT (site_id, warehouse_id, material_type_id) 
+                    INSERT INTO swms_inventory (site_id, warehouse_id, material_type_id, grade, quantity, last_updated_at)
+                    VALUES ($1, $2, $3, $4, $5, NOW())
+                    ON CONFLICT (site_id, warehouse_id, material_type_id, grade) 
                     DO UPDATE SET quantity = swms_inventory.quantity - EXCLUDED.quantity, last_updated_at = NOW()
-                `, [outbound.site_id, outbound.warehouse_id, outbound.material_type_id, Math.abs(outbound.quantity)]); // Stored as positive quantity in Outbound, so we negate in update
+                `, [outbound.site_id, outbound.warehouse_id, outbound.material_type_id, outbound.grade || 'A', Math.abs(outbound.quantity)]); // Stored as positive quantity in Outbound, so we negate in update
             }
 
             await client.query('COMMIT');

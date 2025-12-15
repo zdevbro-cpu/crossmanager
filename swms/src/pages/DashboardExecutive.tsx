@@ -6,6 +6,8 @@ import MarketTicker from './dashboard/MarketTicker'
 import PricingDecisionCard from './dashboard/PricingDecisionCard'
 import MaterialTrendChart from './dashboard/MaterialTrendChart'
 import MarketTrendChart from './dashboard/MarketTrendChart'
+import SankeyFlowCard from './dashboard/SankeyFlowCard'
+import ZoneHeatmapCard from './dashboard/ZoneHeatmapCard'
 import { formatCurrency, formatPct, formatQty } from './dashboard/format'
 import { useSwmsDashboardData } from './dashboard/useSwmsDashboardData'
 
@@ -39,6 +41,7 @@ export default function DashboardExecutive() {
   const data = useSwmsDashboardData(siteId)
   const pricingMaterials = data.pricingMaterials.data || []
   const [materialTypeId, setMaterialTypeId] = useState<string>('')
+  const [zoneViewMode, setZoneViewMode] = useState<'capacity' | 'aging'>('capacity')
 
   // Automatically select first material when loaded
   useEffect(() => {
@@ -240,6 +243,19 @@ export default function DashboardExecutive() {
               height={280}
             />
           ) : <div />}
+        </section>
+
+        {/* Row 3: Flow & Capacity */}
+        <section className="dashboard-grid" style={{ alignItems: 'stretch' }}>
+          <SankeyFlowCard response={data.sankey.data} loading={data.sankey.isLoading} height={340} />
+          <ZoneHeatmapCard
+            viewMode={zoneViewMode}
+            onChange={setZoneViewMode}
+            capacity={data.zoneHeatCapacity.data}
+            aging={data.zoneHeatAging.data}
+            loading={(zoneViewMode === 'capacity' ? data.zoneHeatCapacity.isLoading : data.zoneHeatAging.isLoading) || false}
+            height={340}
+          />
         </section>
       </div>
     </div>

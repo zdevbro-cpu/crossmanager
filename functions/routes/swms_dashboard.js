@@ -11,6 +11,66 @@ module.exports = (pool) => {
     // Phase 1: "노멀 정의" 기반의 대시보드 API
     // Base path: /api/swms/dashboard/*
 
+    // GET /api/swms/dashboard/debug/summary?siteId
+    // 배포 환경에서 "0" 또는 "Market data is empty" 원인(사이트ID/샘플데이터/매핑)을 빠르게 확인하기 위한 진단용.
+    router.get('/dashboard/debug/summary', async (req, res) => {
+        const siteId = req.query.siteId ? String(req.query.siteId) : null
+        const today = new Date().toISOString().slice(0, 10)
+
+        try {
+            const q = `
+                SELECT
+                    (SELECT COUNT(*)::int FROM swms_inbounds  WHERE ($1::text IS NULL OR site_id = $1::text)) AS inbounds_total,
+                    (SELECT COUNT(*)::int FROM swms_outbounds WHERE ($1::text IS NULL OR site_id = $1::text)) AS outbounds_total,
+                    (SELECT COUNT(*)::int FROM swms_weighings WHERE ($1::text IS NULL OR site_id = $1::text)) AS weighings_total,
+                    (SELECT COUNT(*)::int FROM swms_inventory WHERE ($1::text IS NULL OR site_id = $1::text)) AS inventory_rows,
+                    (SELECT COUNT(*)::int FROM swms_process_events WHERE ($1::text IS NULL OR site_id = $1::text)) AS process_events_total,
+                    (SELECT COUNT(*)::int FROM swms_market_symbol_map) AS market_symbol_map_rows,
+                    (SELECT COUNT(*)::int FROM swms_market_prices_daily WHERE price_date = $2::date) AS market_prices_today_rows,
+                    (SELECT COUNT(*)::int FROM swms_pricing_coefficients WHERE ($1::text IS NULL AND site_id IS NULL) OR site_id = $1::text) AS pricing_coeff_rows,
+                    (SELECT COUNT(*)::int FROM swms_pricing_decisions WHERE ($1::text IS NULL OR site_id = $1::text)) AS pricing_decisions_rows
+            `
+            const r = (await pool.query(q, [siteId, today])).rows?.[0] || {}
+
+            const distinct = async (table) => {
+                try {
+                    const { rows } = await pool.query(`SELECT DISTINCT site_id::text AS site_id FROM ${table} ORDER BY site_id::text LIMIT 20`)
+                    return rows.map(x => x.site_id)
+                } catch {
+                    return []
+                }
+            }
+
+            res.json({
+                siteId,
+                today,
+                counts: {
+                    inboundsTotal: Number(r.inbounds_total || 0),
+                    outboundsTotal: Number(r.outbounds_total || 0),
+                    weighingsTotal: Number(r.weighings_total || 0),
+                    inventoryRows: Number(r.inventory_rows || 0),
+                    processEventsTotal: Number(r.process_events_total || 0),
+                    marketSymbolMapRows: Number(r.market_symbol_map_rows || 0),
+                    marketPricesTodayRows: Number(r.market_prices_today_rows || 0),
+                    pricingCoeffRows: Number(r.pricing_coeff_rows || 0),
+                    pricingDecisionsRows: Number(r.pricing_decisions_rows || 0),
+                },
+                distinctSiteIds: {
+                    inbounds: await distinct('swms_inbounds'),
+                    outbounds: await distinct('swms_outbounds'),
+                    inventory: await distinct('swms_inventory'),
+                    weighings: await distinct('swms_weighings'),
+                    processEvents: await distinct('swms_process_events'),
+                },
+                hint:
+                    'counts가 0이면 해당 siteId로 데이터가 없거나(siteId 불일치) 샘플 시드가 실행되지 않은 상태일 수 있습니다. /api/swms/sites/my로 내려오는 siteId와 DB site_id가 일치하는지 확인하세요.',
+            })
+        } catch (e) {
+            console.error('[SWMS dashboard] debug summary error:', e)
+            res.status(500).json({ error: e.message })
+        }
+    })
+
     // GET /api/swms/dashboard/kpi?siteId&date=YYYY-MM-DD
     router.get('/dashboard/kpi', async (req, res) => {
         const siteId = req.query.siteId ? String(req.query.siteId) : null
@@ -505,6 +565,254 @@ module.exports = (pool) => {
             })
         } catch (e) {
             console.error('[SWMS dashboard] risk error:', e)
+            res.status(500).json({ error: e.message })
+        }
+    })
+
+    // GET /api/swms/dashboard/charts/sankey?siteId&periodDays=30&mode=status|category|material&maxZones=9
+    // Based on swms_process_events (INBOUND→SORT→STORAGE(Zone)→OUTBOUND→SETTLEMENT)
+    router.get('/dashboard/charts/sankey', async (req, res) => {
+        const siteId = req.query.siteId ? String(req.query.siteId) : null
+        const periodDays = clampInt(req.query.periodDays, 1, 365, 30)
+        const mode = req.query.mode ? String(req.query.mode) : 'status'
+        const maxZones = clampInt(req.query.maxZones, 1, 50, 9)
+        const sortThresholdHours = clampInt(req.query.sortThresholdHours, 1, 240, 24)
+
+        try {
+            const q = `
+                SELECT
+                    e.from_stage,
+                    e.to_stage,
+                    COALESCE(e.quantity,0)::numeric AS quantity,
+                    COALESCE(NULLIF(e.grade,''),'A') AS grade,
+                    e.warehouse_id,
+                    w.name AS warehouse_name,
+                    m.name AS material_name,
+                    m.category AS material_category
+                FROM swms_process_events e
+                LEFT JOIN swms_warehouses w ON w.id = e.warehouse_id
+                LEFT JOIN swms_material_types m ON m.id = e.material_type_id
+                WHERE e.occurred_at >= NOW() - ($1::int || ' days')::interval
+                AND ($2::text IS NULL OR e.site_id = $2::text)
+                AND (e.warehouse_id IS NULL OR w.id IS NOT NULL)
+            `
+            const { rows } = await pool.query(q, [periodDays, siteId])
+
+            const stageLabel = (stage, row) => {
+                switch (stage) {
+                    case 'INBOUND': return '입고'
+                    case 'SORT': return '선별'
+                    case 'STORAGE': {
+                        const zone = row.warehouse_name || row.warehouse_id || 'Zone'
+                        return `보관:${zone}`
+                    }
+                    case 'OUTBOUND': return '출고'
+                    case 'SETTLEMENT_CONFIRMED': return '정산(확정)'
+                    case 'SETTLEMENT_PENDING': return '정산(대기)'
+                    case 'SETTLEMENT': return '정산'
+                    default: return String(stage || 'Unknown')
+                }
+            }
+
+            const dimensionSuffix = (row) => {
+                const grade = row.grade ? String(row.grade) : 'A'
+                if (mode === 'category') {
+                    const cat = row.material_category ? String(row.material_category) : '미분류'
+                    return `(${cat}/${grade})`
+                }
+                if (mode === 'material') {
+                    const mat = row.material_name ? String(row.material_name) : 'Unknown'
+                    return `(${mat}/${grade})`
+                }
+                return ''
+            }
+
+            const SEP = ' -> '
+            const linkMap = new Map()
+            for (const r of rows) {
+                const src = stageLabel(r.from_stage, r) + dimensionSuffix(r)
+                const dst = stageLabel(r.to_stage, r) + dimensionSuffix(r)
+                const key = `${src}${SEP}${dst}`
+                linkMap.set(key, (linkMap.get(key) || 0) + Number(r.quantity || 0))
+            }
+
+            const linkPairs = Array.from(linkMap.entries())
+                .filter(([, v]) => Number(v) > 0)
+                .map(([k, v]) => {
+                    const [src, dst] = k.split(SEP)
+                    return { sourceName: src, targetName: dst, value: Number(v) }
+                })
+
+            // Readability: keep top-N storage(Zone) nodes and group the rest into "보관:기타"
+            const storageTotals = new Map()
+            for (const l of linkPairs) {
+                if (l.sourceName.startsWith('보관:')) storageTotals.set(l.sourceName, (storageTotals.get(l.sourceName) || 0) + l.value)
+                if (l.targetName.startsWith('보관:')) storageTotals.set(l.targetName, (storageTotals.get(l.targetName) || 0) + l.value)
+            }
+            const storageNames = Array.from(storageTotals.entries()).sort((a, b) => b[1] - a[1]).map(([n]) => n)
+            const keepStorage = new Set(storageNames.slice(0, maxZones))
+            const shouldGroup = storageNames.length > maxZones
+
+            const normalizedLinks = shouldGroup
+                ? linkPairs.map((l) => ({
+                    sourceName: l.sourceName.startsWith('보관:') && !keepStorage.has(l.sourceName) ? '보관:기타' : l.sourceName,
+                    targetName: l.targetName.startsWith('보관:') && !keepStorage.has(l.targetName) ? '보관:기타' : l.targetName,
+                    value: l.value,
+                }))
+                : linkPairs
+
+            const mergedMap = new Map()
+            for (const l of normalizedLinks) {
+                const k = `${l.sourceName}${SEP}${l.targetName}`
+                mergedMap.set(k, (mergedMap.get(k) || 0) + l.value)
+            }
+            const finalLinks = Array.from(mergedMap.entries()).map(([k, v]) => {
+                const [sourceName, targetName] = k.split(SEP)
+                return { sourceName, targetName, value: v }
+            })
+
+            const nodeIndex = new Map()
+            const nodes = []
+            const ensureNode = (name) => {
+                if (nodeIndex.has(name)) return nodeIndex.get(name)
+                const idx = nodes.length
+                nodes.push({ name })
+                nodeIndex.set(name, idx)
+                return idx
+            }
+
+            const links = finalLinks.map((l) => ({
+                source: ensureNode(l.sourceName),
+                target: ensureNode(l.targetName),
+                value: Number(l.value || 0),
+            }))
+
+            // Bottleneck signal: sort average dwell time (hours)
+            let sortAvgHours = null
+            let sortP90Hours = null
+            let sortSamples = 0
+            try {
+                const qDwell = `
+                    WITH sort_in AS (
+                        SELECT
+                            (e.meta->>'flowId') AS flow_id,
+                            e.occurred_at AS t_in
+                        FROM swms_process_events e
+                        WHERE e.occurred_at >= NOW() - ($1::int || ' days')::interval
+                        AND ($2::text IS NULL OR e.site_id = $2::text)
+                        AND e.from_stage = 'INBOUND'
+                        AND e.to_stage = 'SORT'
+                        AND e.meta ? 'flowId'
+                    ),
+                    sort_out AS (
+                        SELECT
+                            (e.meta->>'flowId') AS flow_id,
+                            e.occurred_at AS t_out
+                        FROM swms_process_events e
+                        WHERE e.occurred_at >= NOW() - ($1::int || ' days')::interval
+                        AND ($2::text IS NULL OR e.site_id = $2::text)
+                        AND e.from_stage = 'SORT'
+                        AND e.to_stage = 'STORAGE'
+                        AND e.meta ? 'flowId'
+                    ),
+                    pairs AS (
+                        SELECT
+                            i.flow_id,
+                            EXTRACT(EPOCH FROM (o.t_out - i.t_in)) / 3600.0 AS hours
+                        FROM sort_in i
+                        JOIN sort_out o USING (flow_id)
+                        WHERE o.t_out >= i.t_in
+                    )
+                    SELECT
+                        COUNT(*)::int AS samples,
+                        AVG(hours)::numeric AS avg_hours,
+                        percentile_disc(0.9) WITHIN GROUP (ORDER BY hours) AS p90_hours
+                    FROM pairs
+                    WHERE hours IS NOT NULL
+                    AND hours >= 0
+                `
+                const r2 = (await pool.query(qDwell, [periodDays, siteId])).rows?.[0] || {}
+                sortSamples = Number(r2.samples || 0)
+                sortAvgHours = r2.avg_hours === null || r2.avg_hours === undefined ? null : Number(r2.avg_hours)
+                sortP90Hours = r2.p90_hours === null || r2.p90_hours === undefined ? null : Number(r2.p90_hours)
+            } catch (e2) {
+                console.warn('[SWMS dashboard] sankey sort dwell compute skipped:', e2?.message || e2)
+            }
+
+            const sortBottleneck =
+                sortAvgHours === null
+                    ? { avgHours: null, p90Hours: sortP90Hours, samples: sortSamples, thresholdHours: sortThresholdHours, isBottleneck: false }
+                    : { avgHours: sortAvgHours, p90Hours: sortP90Hours, samples: sortSamples, thresholdHours: sortThresholdHours, isBottleneck: sortAvgHours >= sortThresholdHours }
+
+            res.json({ siteId, periodDays, mode, maxZones, nodes, links, signals: { sortBottleneck } })
+        } catch (e) {
+            console.error('[SWMS dashboard] sankey error:', e)
+            res.status(500).json({ error: e.message })
+        }
+    })
+
+    // GET /api/swms/dashboard/charts/inventory-zone-heatmap?siteId&view=capacity|aging
+    router.get('/dashboard/charts/inventory-zone-heatmap', async (req, res) => {
+        const siteId = req.query.siteId ? String(req.query.siteId) : null
+        const view = req.query.view ? String(req.query.view) : 'capacity'
+
+        try {
+            const q = `
+                WITH inv AS (
+                    SELECT warehouse_id, COALESCE(SUM(quantity),0)::numeric AS qty
+                    FROM swms_inventory
+                    WHERE ($1::text IS NULL OR site_id = $1::text)
+                    GROUP BY warehouse_id
+                ),
+                aging AS (
+                    -- MVP proxy: oldest inbound date per warehouse (last 180 days)
+                    SELECT
+                        warehouse_id,
+                        MIN(inbound_date)::date AS min_inbound_date
+                    FROM swms_inbounds
+                    WHERE inbound_date >= CURRENT_DATE - 180
+                    AND ($1::text IS NULL OR site_id = $1::text)
+                    GROUP BY warehouse_id
+                )
+                SELECT
+                    w.id AS warehouse_id,
+                    w.name AS warehouse_name,
+                    w.type AS warehouse_type,
+                    w.capacity::numeric AS capacity,
+                    COALESCE(w.unit,'톤') AS unit,
+                    COALESCE(i.qty,0)::numeric AS quantity,
+                    CASE
+                        WHEN w.capacity IS NULL OR w.capacity = 0 THEN NULL
+                        ELSE (COALESCE(i.qty,0) / w.capacity) * 100
+                    END AS fill_rate_pct,
+                    CASE
+                        WHEN a.min_inbound_date IS NULL THEN NULL
+                        ELSE (CURRENT_DATE - a.min_inbound_date)::int
+                    END AS max_age_days
+                FROM swms_warehouses w
+                LEFT JOIN inv i ON i.warehouse_id = w.id
+                LEFT JOIN aging a ON a.warehouse_id = w.id
+                WHERE ($1::text IS NULL OR w.site_id = $1::text)
+                ORDER BY w.name ASC
+            `
+            const { rows } = await pool.query(q, [siteId])
+
+            res.json({
+                siteId,
+                view,
+                zones: rows.map((r) => ({
+                    warehouseId: String(r.warehouse_id),
+                    warehouseName: r.warehouse_name || 'Zone',
+                    type: r.warehouse_type || null,
+                    unit: r.unit || '톤',
+                    capacity: r.capacity === null || r.capacity === undefined ? null : Number(r.capacity),
+                    quantity: Number(r.quantity || 0),
+                    fillRatePct: r.fill_rate_pct === null || r.fill_rate_pct === undefined ? null : Number(r.fill_rate_pct),
+                    maxAgeDays: r.max_age_days === null || r.max_age_days === undefined ? null : Number(r.max_age_days),
+                })),
+            })
+        } catch (e) {
+            console.error('[SWMS dashboard] inventory-zone-heatmap error:', e)
             res.status(500).json({ error: e.message })
         }
     })

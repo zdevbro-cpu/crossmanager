@@ -78,6 +78,50 @@ export interface InventoryHeatRow {
   quantity: number
 }
 
+export interface SankeyNode {
+  name: string
+}
+
+export interface SankeyLink {
+  source: number
+  target: number
+  value: number
+}
+
+export interface SankeyResponse {
+  siteId: string | null
+  periodDays: number
+  mode: 'status' | 'category' | 'material' | string
+  nodes: SankeyNode[]
+  links: SankeyLink[]
+  signals?: {
+    sortBottleneck?: {
+      avgHours: NullableNumber
+      p90Hours: NullableNumber
+      samples: number
+      thresholdHours: number
+      isBottleneck: boolean
+    }
+  }
+}
+
+export interface ZoneHeatmapRow {
+  warehouseId: string
+  warehouseName: string
+  type: string | null
+  unit: string
+  capacity: number | null
+  quantity: number
+  fillRatePct: NullableNumber
+  maxAgeDays: NullableNumber
+}
+
+export interface ZoneHeatmapResponse {
+  siteId: string | null
+  view: 'capacity' | 'aging' | string
+  zones: ZoneHeatmapRow[]
+}
+
 export interface WorkQueueResponse {
   date: string
   siteId: string | null
@@ -180,6 +224,30 @@ export function useSwmsDashboardData(siteId?: string) {
     retry: 1,
   })
 
+  const sankey = useQuery<SankeyResponse>({
+    queryKey: ['swms-dashboard', 'sankey', siteId],
+    enabled: !!siteId,
+    queryFn: async () =>
+      (await apiClient.get('/swms/dashboard/charts/sankey', { params: { siteId, periodDays: 30, mode: 'status', maxZones: 9 } })).data,
+    retry: 1,
+  })
+
+  const zoneHeatCapacity = useQuery<ZoneHeatmapResponse>({
+    queryKey: ['swms-dashboard', 'zone-heatmap', 'capacity', siteId],
+    enabled: !!siteId,
+    queryFn: async () =>
+      (await apiClient.get('/swms/dashboard/charts/inventory-zone-heatmap', { params: { siteId, view: 'capacity' } })).data,
+    retry: 1,
+  })
+
+  const zoneHeatAging = useQuery<ZoneHeatmapResponse>({
+    queryKey: ['swms-dashboard', 'zone-heatmap', 'aging', siteId],
+    enabled: !!siteId,
+    queryFn: async () =>
+      (await apiClient.get('/swms/dashboard/charts/inventory-zone-heatmap', { params: { siteId, view: 'aging' } })).data,
+    retry: 1,
+  })
+
   const workQueue = useQuery<WorkQueueResponse>({
     queryKey: ['swms-dashboard', 'work-queue', siteId, today],
     enabled: !!siteId,
@@ -216,10 +284,12 @@ export function useSwmsDashboardData(siteId?: string) {
     portfolio,
     priceMargin,
     inventoryHeat,
+    sankey,
+    zoneHeatCapacity,
+    zoneHeatAging,
     workQueue,
     risk,
     ticker,
     pricingMaterials,
   }
 }
-

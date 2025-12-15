@@ -33,7 +33,7 @@ function EquipmentDetailPage() {
 
     const loadEquipmentData = async () => {
         try {
-            const res = await fetch(`http://localhost:3000/api/equipment/${id}`)
+            const res = await fetch(`/api/equipment/${id}`)
             if (res.ok) {
                 const data = await res.json()
                 setEquipmentName(data.name || '')
@@ -85,7 +85,7 @@ function EquipmentDetailPage() {
                 formData.append('category', category)
 
                 // 서버에 파일 업로드
-                const res = await fetch(`http://localhost:3000/api/equipment/${id}/upload`, {
+                const res = await fetch(`/api/equipment/${id}/upload`, {
                     method: 'POST',
                     body: formData
                 })
@@ -113,7 +113,7 @@ function EquipmentDetailPage() {
         if (!window.confirm(`"${file.name}" 파일을 삭제하시겠습니까?`)) return
 
         try {
-            const res = await fetch(`http://localhost:3000/api/equipment/${id}/documents/${fileId}`, {
+            const res = await fetch(`/api/equipment/${id}/documents/${fileId}`, {
                 method: 'DELETE'
             })
 
@@ -133,7 +133,7 @@ function EquipmentDetailPage() {
     const handleFileView = (file: UploadedFile) => {
         if (file.url) {
             // 서버의 정적 파일 URL로 열기
-            const fileUrl = `http://localhost:3000${file.url}`
+            const fileUrl = `${window.location.origin}${file.url}`
             window.open(fileUrl, '_blank')
         }
     }
@@ -147,8 +147,8 @@ function EquipmentDetailPage() {
             }
 
             const url = id === 'new'
-                ? 'http://localhost:3000/api/equipment'
-                : `http://localhost:3000/api/equipment/${id}`
+                ? '/api/equipment'
+                : `/api/equipment/${id}`
 
             const method = id === 'new' ? 'POST' : 'PUT'
 

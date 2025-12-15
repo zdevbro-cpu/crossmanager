@@ -31,7 +31,7 @@ function EquipmentListPage() {
 
     const fetchEquipment = async () => {
         try {
-            const res = await apiClient.get('/ems/equipment')
+            const res = await apiClient.get('/equipment')
             setEquipment(res.data)
         } catch (err) {
             console.error(err)
@@ -56,7 +56,7 @@ function EquipmentListPage() {
         if (!window.confirm(`"${name}" 장비를 삭제하시겠습니까?`)) return
 
         try {
-            await apiClient.delete(`/ems/equipment/${id}`)
+            await apiClient.delete(`/equipment/${id}`)
             show('장비가 삭제되었습니다.', 'success')
             fetchEquipment()
         } catch (err) {

@@ -17,8 +17,16 @@ const crypto = require('crypto')
 const fs = require('fs')
 const path = require('path')
 
-const SITE_ID = 'FAC-001'
-const PROJECT_ID = 'SAMPLE-PROJ-001'
+function parseArg(name) {
+    const i = process.argv.findIndex((x) => x === name || x.startsWith(`${name}=`))
+    if (i < 0) return null
+    const v = process.argv[i].includes('=') ? process.argv[i].split('=')[1] : process.argv[i + 1]
+    return v ? String(v) : null
+}
+
+const SITE_ID = process.env.SWMS_SITE_ID || parseArg('--siteId') || 'FAC-001'
+// Keep sample scope isolated per-site to avoid collisions in shared environments.
+const PROJECT_ID = process.env.SWMS_SAMPLE_PROJECT_ID || `SAMPLE-PROJ-001-${SITE_ID}`
 
 function isoDate(d) {
     return d.toISOString().slice(0, 10)
@@ -48,6 +56,12 @@ async function tableHasColumn(client, table, column) {
     `
     const r = await client.query(q, [table, column])
     return r.rows.length > 0
+}
+
+async function tableExists(client, table) {
+    const q = `SELECT to_regclass($1) AS reg`
+    const r = await client.query(q, [`public.${table}`])
+    return !!r.rows[0]?.reg
 }
 
 async function main() {
@@ -103,19 +117,40 @@ async function main() {
         )
         const warehouseIds = sampleWarehouses.rows.map(r => r.id)
 
-        // Cleanup (sample scope only)
+        // Cleanup orphan process events (warehouses removed/renamed over time)
+        if (await tableExists(client, 'swms_process_events')) {
+            await client.query(
+                `DELETE FROM swms_process_events e
+                 WHERE e.site_id = $1
+                 AND e.warehouse_id IS NOT NULL
+                 AND NOT EXISTS (
+                    SELECT 1 FROM swms_warehouses w
+                    WHERE w.site_id = $1 AND w.id = e.warehouse_id
+                 )`,
+                [SITE_ID]
+            )
+        }
+
+        // Cleanup (sample scope only, site-bounded)
         if (vendorIds.length > 0) {
             await client.query(
                 `DELETE FROM swms_settlement_items
-                 WHERE settlement_id IN (SELECT id FROM swms_settlements WHERE vendor_id = ANY($1::text[]))`,
-                [vendorIds]
+                 WHERE settlement_id IN (
+                    SELECT id FROM swms_settlements
+                    WHERE site_id = $2
+                    AND vendor_id = ANY($1::text[])
+                 )`,
+                [vendorIds, SITE_ID]
             )
-            await client.query('DELETE FROM swms_settlements WHERE vendor_id = ANY($1::text[])', [vendorIds])
+            await client.query(
+                'DELETE FROM swms_settlements WHERE site_id = $2 AND vendor_id = ANY($1::text[])',
+                [vendorIds, SITE_ID]
+            )
         }
 
-        await client.query('DELETE FROM swms_outbounds WHERE project_id=$1', [PROJECT_ID])
-        await client.query('DELETE FROM swms_inbounds WHERE project_id=$1', [PROJECT_ID])
-        await client.query('DELETE FROM swms_weighings WHERE project_id=$1', [PROJECT_ID])
+        await client.query('DELETE FROM swms_outbounds WHERE project_id=$1 AND site_id=$2', [PROJECT_ID, SITE_ID])
+        await client.query('DELETE FROM swms_inbounds WHERE project_id=$1 AND site_id=$2', [PROJECT_ID, SITE_ID])
+        await client.query('DELETE FROM swms_weighings WHERE project_id=$1 AND site_id=$2', [PROJECT_ID, SITE_ID])
         await client.query("DELETE FROM swms_anomalies WHERE site_id=$1 AND title LIKE '[SAMPLE]%' ", [SITE_ID])
         await client.query("DELETE FROM swms_allbaro_sync WHERE site_id=$1 AND (external_key LIKE 'SAMPLE-%' OR error_message LIKE '[SAMPLE]%')", [SITE_ID])
         await client.query("DELETE FROM swms_claims WHERE site_id=$1 AND notes LIKE '[SAMPLE]%'", [SITE_ID])
@@ -124,17 +159,18 @@ async function main() {
         await client.query("DELETE FROM swms_attachments WHERE site_id=$1 AND file_name LIKE '[SAMPLE]%'", [SITE_ID])
 
         if (warehouseIds.length > 0) {
+            if (await tableExists(client, 'swms_process_events')) {
+                await client.query('DELETE FROM swms_process_events WHERE site_id=$1 AND warehouse_id = ANY($2::text[])', [SITE_ID, warehouseIds])
+            }
             await client.query('DELETE FROM swms_inventory WHERE warehouse_id = ANY($1::text[])', [warehouseIds])
             await client.query("DELETE FROM swms_warehouses WHERE id = ANY($1::text[])", [warehouseIds])
         }
+        // Cleanup: utility warehouse ids used only for sample/testing
+        await client.query('DELETE FROM swms_inventory WHERE site_id=$1 AND warehouse_id IN ($2,$3)', [SITE_ID, 'WH-KPI', 'WH-NEG'])
 
-        if (vendorIds.length > 0) {
-            await client.query('DELETE FROM swms_vendors WHERE id = ANY($1::text[])', [vendorIds])
-        }
-
-        if (materialIds.length > 0) {
-            await client.query('DELETE FROM swms_material_types WHERE id = ANY($1::text[])', [materialIds])
-        }
+        // NOTE: Do not delete [SAMPLE] vendors/materials here.
+        // In shared/demo environments they may be referenced by existing records (FK),
+        // and repeated runs should be safe (we upsert by name below).
 
         // Master data (sample)
         const materials = [
@@ -197,8 +233,29 @@ async function main() {
         ]
 
         const hasIsScrap = await tableHasColumn(client, 'swms_material_types', 'is_scrap')
+        const hasWarehouseCapacity = await tableHasColumn(client, 'swms_warehouses', 'capacity')
+        const hasInventoryGrade = await tableHasColumn(client, 'swms_inventory', 'grade')
+        const hasProcessEvents = await tableExists(client, 'swms_process_events')
 
-        for (const m of materials) {
+        if (hasProcessEvents && materialIds.length > 0) {
+            await client.query('DELETE FROM swms_process_events WHERE site_id=$1 AND material_type_id = ANY($2::text[])', [SITE_ID, materialIds])
+        }
+
+        const ensureMaterial = async (m) => {
+            const existing = await client.query('SELECT id FROM swms_material_types WHERE name=$1 LIMIT 1', [m.name])
+            if (existing.rows[0]?.id) {
+                m.id = existing.rows[0].id
+                await client.query('UPDATE swms_material_types SET category=$2, unit=$3, unit_price=$4 WHERE id=$1', [
+                    m.id,
+                    m.category,
+                    m.unit,
+                    m.unit_price,
+                ])
+                if (hasIsScrap) {
+                    await client.query('UPDATE swms_material_types SET is_scrap=$2 WHERE id=$1', [m.id, m.is_scrap])
+                }
+                return
+            }
             if (hasIsScrap) {
                 await client.query(
                     `INSERT INTO swms_material_types (id, name, category, unit, unit_price, is_scrap)
@@ -214,7 +271,18 @@ async function main() {
             }
         }
 
-        for (const v of vendors) {
+        const ensureVendor = async (v) => {
+            const existing = await client.query('SELECT id FROM swms_vendors WHERE name=$1 LIMIT 1', [v.name])
+            if (existing.rows[0]?.id) {
+                v.id = existing.rows[0].id
+                await client.query('UPDATE swms_vendors SET type=$2, contact=$3, registration_no=$4 WHERE id=$1', [
+                    v.id,
+                    v.type,
+                    '010-0000-0000',
+                    'SAMPLE-REG',
+                ])
+                return
+            }
             await client.query(
                 `INSERT INTO swms_vendors (id, name, type, contact, registration_no)
                  VALUES ($1,$2,$3,$4,$5)`,
@@ -222,37 +290,103 @@ async function main() {
             )
         }
 
-        const wh1 = { id: crypto.randomUUID(), name: '[SAMPLE] 야적장(Outdoor)', type: 'Open' }
-        const wh2 = { id: crypto.randomUUID(), name: '[SAMPLE] 창고(Indoor)', type: 'Indoor' }
-        await client.query(
-            `INSERT INTO swms_warehouses (id, site_id, name, type) VALUES ($1,$2,$3,$4), ($5,$6,$7,$8)`,
-            [wh1.id, SITE_ID, wh1.name, wh1.type, wh2.id, SITE_ID, wh2.name, wh2.type]
-        )
+        for (const m of materials) await ensureMaterial(m)
+        for (const v of vendors) await ensureVendor(v)
+
+        const indoorZones = Array.from({ length: 5 }).map((_, idx) => ({
+            id: crypto.randomUUID(),
+            name: `[SAMPLE] 인도어 ${idx + 1}구역`,
+            type: 'INDOOR',
+            capacity: 100,
+            unit: '톤',
+        }))
+        const outdoorZones = Array.from({ length: 4 }).map((_, idx) => ({
+            id: crypto.randomUUID(),
+            name: `[SAMPLE] 아웃도어 ${idx + 1}구역`,
+            type: 'YARD',
+            capacity: 100,
+            unit: '톤',
+        }))
+        const warehouses = [...indoorZones, ...outdoorZones]
+
+        if (hasWarehouseCapacity) {
+            const values = warehouses
+                .map((_, i) => `($${i * 6 + 1},$${i * 6 + 2},$${i * 6 + 3},$${i * 6 + 4},$${i * 6 + 5},$${i * 6 + 6})`)
+                .join(',')
+            const params = warehouses.flatMap((w) => [w.id, SITE_ID, w.name, w.type, w.capacity, w.unit])
+            await client.query(`INSERT INTO swms_warehouses (id, site_id, name, type, capacity, unit) VALUES ${values}`, params)
+        } else {
+            const values = warehouses
+                .map((_, i) => `($${i * 4 + 1},$${i * 4 + 2},$${i * 4 + 3},$${i * 4 + 4})`)
+                .join(',')
+            const params = warehouses.flatMap((w) => [w.id, SITE_ID, w.name, w.type])
+            await client.query(`INSERT INTO swms_warehouses (id, site_id, name, type) VALUES ${values}`, params)
+        }
 
         // Inventory snapshot (current)
+        // 목표(색상 테스트): 포화(fillRatePct) 100% 이상부터 10%까지 확인 가능하도록 구성
+        // - 임계치(프론트): red>=90 / amber>=70 / green>=40 / slate<40
         const invRows = [
-            { warehouse_id: wh1.id, material_type_id: materials[0].id, quantity: 42.5 },
-            { warehouse_id: wh1.id, material_type_id: materials[3].id, quantity: 8.2 },
-            { warehouse_id: wh2.id, material_type_id: materials[1].id, quantity: 3.6 },
-            { warehouse_id: wh2.id, material_type_id: materials[2].id, quantity: 5.1 },
-            // one negative row to surface risk UI
-            { warehouse_id: wh2.id, material_type_id: materials[3].id, quantity: -0.4 },
+            // Indoor 1: 110% (over-capacity)
+            { warehouse_id: indoorZones[0].id, material_type_id: materials[1].id, grade: 'A', quantity: 50.0 },
+            { warehouse_id: indoorZones[0].id, material_type_id: materials[1].id, grade: 'B', quantity: 35.0 },
+            { warehouse_id: indoorZones[0].id, material_type_id: materials[1].id, grade: 'C', quantity: 25.0 },
+            // Indoor 2: 95%
+            { warehouse_id: indoorZones[1].id, material_type_id: materials[2].id, grade: 'A', quantity: 45.0 },
+            { warehouse_id: indoorZones[1].id, material_type_id: materials[2].id, grade: 'B', quantity: 30.0 },
+            { warehouse_id: indoorZones[1].id, material_type_id: materials[2].id, grade: 'C', quantity: 20.0 },
+            // Indoor 3: 80%
+            { warehouse_id: indoorZones[2].id, material_type_id: materials[5].id, grade: 'A', quantity: 30.0 },
+            { warehouse_id: indoorZones[2].id, material_type_id: materials[5].id, grade: 'B', quantity: 30.0 },
+            { warehouse_id: indoorZones[2].id, material_type_id: materials[5].id, grade: 'C', quantity: 20.0 },
+            // Indoor 4: 65%
+            { warehouse_id: indoorZones[3].id, material_type_id: materials[4].id, grade: 'A', quantity: 35.0 },
+            { warehouse_id: indoorZones[3].id, material_type_id: materials[4].id, grade: 'B', quantity: 20.0 },
+            { warehouse_id: indoorZones[3].id, material_type_id: materials[4].id, grade: 'C', quantity: 10.0 },
+            // Indoor 5: 50%
+            { warehouse_id: indoorZones[4].id, material_type_id: materials[0].id, grade: 'A', quantity: 25.0 },
+            { warehouse_id: indoorZones[4].id, material_type_id: materials[0].id, grade: 'B', quantity: 15.0 },
+            { warehouse_id: indoorZones[4].id, material_type_id: materials[0].id, grade: 'C', quantity: 10.0 },
+            // Outdoor 1: 35%
+            { warehouse_id: outdoorZones[0].id, material_type_id: materials[0].id, grade: 'A', quantity: 20.0 },
+            { warehouse_id: outdoorZones[0].id, material_type_id: materials[0].id, grade: 'B', quantity: 10.0 },
+            { warehouse_id: outdoorZones[0].id, material_type_id: materials[0].id, grade: 'C', quantity: 5.0 },
+            // Outdoor 2: 25%
+            { warehouse_id: outdoorZones[1].id, material_type_id: materials[3].id, grade: 'C', quantity: 25.0 },
+            // Outdoor 3: 15%
+            { warehouse_id: outdoorZones[2].id, material_type_id: materials[3].id, grade: 'C', quantity: 15.0 },
+            // Outdoor 4: 10%
+            { warehouse_id: outdoorZones[3].id, material_type_id: materials[3].id, grade: 'C', quantity: 10.0 },
+            // one negative row to surface risk UI (not tied to a displayed Zone)
+            { warehouse_id: 'WH-NEG', material_type_id: materials[3].id, grade: 'C', quantity: -0.4 },
         ]
         for (const r of invRows) {
-            await client.query(
-                `INSERT INTO swms_inventory (site_id, warehouse_id, material_type_id, quantity, last_updated_at)
-                 VALUES ($1,$2,$3,$4,NOW())
-                 ON CONFLICT (site_id, warehouse_id, material_type_id) DO UPDATE SET
-                    quantity = EXCLUDED.quantity,
-                    last_updated_at = NOW()`,
-                [SITE_ID, r.warehouse_id, r.material_type_id, r.quantity]
-            )
+            if (hasInventoryGrade) {
+                await client.query(
+                    `INSERT INTO swms_inventory (site_id, warehouse_id, material_type_id, grade, quantity, last_updated_at)
+                     VALUES ($1,$2,$3,$4,$5,NOW())
+                     ON CONFLICT (site_id, warehouse_id, material_type_id, grade) DO UPDATE SET
+                        quantity = EXCLUDED.quantity,
+                        last_updated_at = NOW()`,
+                    [SITE_ID, r.warehouse_id, r.material_type_id, r.grade, r.quantity]
+                )
+            } else {
+                await client.query(
+                    `INSERT INTO swms_inventory (site_id, warehouse_id, material_type_id, quantity, last_updated_at)
+                     VALUES ($1,$2,$3,$4,NOW())
+                     ON CONFLICT (site_id, warehouse_id, material_type_id) DO UPDATE SET
+                        quantity = EXCLUDED.quantity,
+                        last_updated_at = NOW()`,
+                    [SITE_ID, r.warehouse_id, r.material_type_id, r.quantity]
+                )
+            }
         }
 
         // Inbounds / Outbounds (last 30 days)
         const buyerId = vendors[0].id
         const disposerId = vendors[2].id
         const start = addDays(now, -29)
+        const KPI_WAREHOUSE_ID = 'WH-KPI'
         for (let i = 0; i < 30; i++) {
             const d = addDays(start, i)
             const dStr = isoDate(d)
@@ -263,19 +397,20 @@ async function main() {
             const inboundWasteQty = 0.8 + (i % 3) * 0.4
             await client.query(
                 `INSERT INTO swms_inbounds
-                    (id, site_id, project_id, inbound_date, warehouse_id, vendor_id, material_type_id, quantity, unit_price, total_amount, status, created_at)
+                    (id, site_id, project_id, inbound_date, warehouse_id, vendor_id, material_type_id, grade, quantity, unit_price, total_amount, status, created_at)
                  VALUES
-                    ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW()),
-                    ($12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,NOW()),
-                    ($23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,NOW())`,
+                    ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW()),
+                    ($13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,NOW()),
+                    ($25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,NOW())`,
                 [
                     crypto.randomUUID(),
                     SITE_ID,
                     PROJECT_ID,
                     dStr,
-                    wh1.id,
+                    KPI_WAREHOUSE_ID,
                     disposerId,
                     materials[0].id,
+                    i % 3 === 0 ? 'A' : i % 3 === 1 ? 'B' : 'C',
                     inboundScrapQty,
                     0,
                     0,
@@ -284,9 +419,10 @@ async function main() {
                     SITE_ID,
                     PROJECT_ID,
                     dStr,
-                    wh1.id,
+                    KPI_WAREHOUSE_ID,
                     disposerId,
                     materials[3].id,
+                    'C',
                     inboundWasteQty,
                     0,
                     0,
@@ -295,9 +431,10 @@ async function main() {
                     SITE_ID,
                     PROJECT_ID,
                     dStr,
-                    wh2.id,
+                    KPI_WAREHOUSE_ID,
                     disposerId,
                     materials[2].id,
+                    i % 2 === 0 ? 'A' : 'B',
                     inboundAlQty,
                     0,
                     0,
@@ -315,19 +452,20 @@ async function main() {
 
             await client.query(
                 `INSERT INTO swms_outbounds
-                    (id, site_id, project_id, outbound_date, warehouse_id, vendor_id, material_type_id, quantity, unit_price, total_amount, status, created_at)
+                    (id, site_id, project_id, outbound_date, warehouse_id, vendor_id, material_type_id, grade, quantity, unit_price, total_amount, status, created_at)
                  VALUES
-                    ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW()),
-                    ($12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,NOW()),
-                    ($23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,NOW())`,
+                    ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW()),
+                    ($13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,NOW()),
+                    ($25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,NOW())`,
                 [
                     crypto.randomUUID(),
                     SITE_ID,
                     PROJECT_ID,
                     dStr,
-                    wh1.id,
+                    KPI_WAREHOUSE_ID,
                     buyerId,
                     materials[0].id,
+                    i % 3 === 0 ? 'A' : i % 3 === 1 ? 'B' : 'C',
                     outboundScrapQty,
                     materials[0].unit_price,
                     outboundScrapQty * materials[0].unit_price,
@@ -336,9 +474,10 @@ async function main() {
                     SITE_ID,
                     PROJECT_ID,
                     dStr,
-                    wh1.id,
+                    KPI_WAREHOUSE_ID,
                     disposerId,
                     materials[3].id,
+                    'C',
                     outboundWasteQty,
                     materials[2].unit_price,
                     outboundWasteQty * materials[2].unit_price,
@@ -347,16 +486,146 @@ async function main() {
                     SITE_ID,
                     PROJECT_ID,
                     dStr,
-                    wh2.id,
+                    KPI_WAREHOUSE_ID,
                     buyerId,
                     materials[2].id,
+                    i % 2 === 0 ? 'A' : 'B',
                     outboundAlQty,
                     materials[2].unit_price,
                     outboundAlQty * materials[2].unit_price,
                     status,
                 ]
             )
+
+            if (hasProcessEvents) {
+                const scrapGrade = i % 3 === 0 ? 'A' : i % 3 === 1 ? 'B' : 'C'
+                const alGrade = i % 2 === 0 ? 'A' : 'B'
+                const settled = status === 'SETTLED'
+                const zone = warehouses[i % warehouses.length]
+                const zone2 = warehouses[(i + 3) % warehouses.length]
+                const zone3 = warehouses[(i + 6) % warehouses.length]
+
+                // Sorting dwell time sample (hours): used for bottleneck signal (avg dwell time)
+                // Make avg > 24h for demo: 6/30 days @48h, 24/30 days @20h  => avg ~25.6h
+                const sortDwellHours = i % 5 === 0 ? 48 : 20
+                const addHours = (iso, h) => new Date(new Date(iso).getTime() + h * 3600 * 1000).toISOString()
+
+                // Scrap flow (inbound -> sort -> storage(zone) -> outbound -> settlement status)
+                const scrapSorted = Math.max(0, inboundScrapQty * 0.96)
+                const scrapFlowId = crypto.randomUUID()
+                const scrapInAt = new Date(`${dStr}T09:00:00Z`).toISOString()
+                const scrapSortedAt = addHours(scrapInAt, sortDwellHours)
+                const scrapOutAt = addHours(scrapSortedAt, 4)
+                await client.query(
+                    `INSERT INTO swms_process_events (site_id, warehouse_id, material_type_id, grade, from_stage, to_stage, quantity, occurred_at, meta)
+                     VALUES
+                        ($1,$2,$3,$4,'INBOUND','SORT',$5,$6::timestamptz,$11::jsonb),
+                        ($1,$2,$3,$4,'SORT','STORAGE',$7,$12::timestamptz,$11::jsonb),
+                        ($1,$2,$3,$4,'STORAGE','OUTBOUND',$8,$13::timestamptz,$11::jsonb),
+                        ($1,$2,$3,$4,'OUTBOUND',$9,$10,$13::timestamptz,$11::jsonb)`,
+                    [
+                        SITE_ID,
+                        zone.id,
+                        materials[0].id,
+                        scrapGrade,
+                        inboundScrapQty,
+                        scrapInAt,
+                        scrapSorted,
+                        outboundScrapQty,
+                        settled ? 'SETTLEMENT_CONFIRMED' : 'SETTLEMENT_PENDING',
+                        outboundScrapQty,
+                        JSON.stringify({ seed: 'sample', flowId: scrapFlowId, sortDwellHours }),
+                        scrapSortedAt,
+                        scrapOutAt,
+                    ]
+                )
+
+                // Waste flow (inbound -> sort -> storage(zone) -> outbound -> settlement status)
+                const wasteSorted = Math.max(0, inboundWasteQty * 0.98)
+                const wasteFlowId = crypto.randomUUID()
+                const wasteInAt = new Date(`${dStr}T09:20:00Z`).toISOString()
+                const wasteSortedAt = addHours(wasteInAt, sortDwellHours)
+                const wasteOutAt = addHours(wasteSortedAt, 6)
+                await client.query(
+                    `INSERT INTO swms_process_events (site_id, warehouse_id, material_type_id, grade, from_stage, to_stage, quantity, occurred_at, meta)
+                     VALUES
+                        ($1,$2,$3,$4,'INBOUND','SORT',$5,$6::timestamptz,$11::jsonb),
+                        ($1,$2,$3,$4,'SORT','STORAGE',$7,$12::timestamptz,$11::jsonb),
+                        ($1,$2,$3,$4,'STORAGE','OUTBOUND',$8,$13::timestamptz,$11::jsonb),
+                        ($1,$2,$3,$4,'OUTBOUND',$9,$10,$13::timestamptz,$11::jsonb)`,
+                    [
+                        SITE_ID,
+                        zone2.id,
+                        materials[3].id,
+                        'C',
+                        inboundWasteQty,
+                        wasteInAt,
+                        wasteSorted,
+                        outboundWasteQty,
+                        settled ? 'SETTLEMENT_CONFIRMED' : 'SETTLEMENT_PENDING',
+                        outboundWasteQty,
+                        JSON.stringify({ seed: 'sample', flowId: wasteFlowId, sortDwellHours }),
+                        wasteSortedAt,
+                        wasteOutAt,
+                    ]
+                )
+
+                // Aluminum flow
+                const alSorted = Math.max(0, inboundAlQty * 0.97)
+                const alFlowId = crypto.randomUUID()
+                const alInAt = new Date(`${dStr}T10:10:00Z`).toISOString()
+                const alSortedAt = addHours(alInAt, sortDwellHours)
+                const alOutAt = addHours(alSortedAt, 5)
+                await client.query(
+                    `INSERT INTO swms_process_events (site_id, warehouse_id, material_type_id, grade, from_stage, to_stage, quantity, occurred_at, meta)
+                     VALUES
+                        ($1,$2,$3,$4,'INBOUND','SORT',$5,$6::timestamptz,$11::jsonb),
+                        ($1,$2,$3,$4,'SORT','STORAGE',$7,$12::timestamptz,$11::jsonb),
+                        ($1,$2,$3,$4,'STORAGE','OUTBOUND',$8,$13::timestamptz,$11::jsonb),
+                        ($1,$2,$3,$4,'OUTBOUND',$9,$10,$13::timestamptz,$11::jsonb)`,
+                    [
+                        SITE_ID,
+                        zone3.id,
+                        materials[2].id,
+                        alGrade,
+                        inboundAlQty,
+                        alInAt,
+                        alSorted,
+                        outboundAlQty,
+                        settled ? 'SETTLEMENT_CONFIRMED' : 'SETTLEMENT_PENDING',
+                        outboundAlQty,
+                        JSON.stringify({ seed: 'sample', flowId: alFlowId, sortDwellHours }),
+                        alSortedAt,
+                        alOutAt,
+                    ]
+                )
+            }
         }
+
+        // Aging(체화) 색상 테스트용: 30일부터 5일까지 분산(warehouse별 최소 입고일을 컨트롤)
+        const ageDays = [30, 27, 24, 21, 18, 15, 12, 9, 5]
+        const agingValues = ageDays
+            .map((_, i) => `($${i * 8 + 1},$${i * 8 + 2},$${i * 8 + 3},$${i * 8 + 4},$${i * 8 + 5},$${i * 8 + 6},$${i * 8 + 7},$${i * 8 + 8},0.1,0,0,'CONFIRMED',NOW())`)
+            .join(',')
+        const agingParams = []
+        for (let i = 0; i < warehouses.length; i++) {
+            agingParams.push(
+                crypto.randomUUID(),
+                SITE_ID,
+                PROJECT_ID,
+                isoDate(addDays(now, -ageDays[i])),
+                warehouses[i].id,
+                disposerId,
+                materials[0].id,
+                'A'
+            )
+        }
+        await client.query(
+            `INSERT INTO swms_inbounds
+                (id, site_id, project_id, inbound_date, warehouse_id, vendor_id, material_type_id, grade, quantity, unit_price, total_amount, status, created_at)
+             VALUES ${agingValues}`,
+            agingParams
+        )
 
         // Settlement waiting (DRAFT) to show work queue
         const draftSettlementId = crypto.randomUUID()

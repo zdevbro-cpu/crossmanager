@@ -23,9 +23,30 @@ import LoginPage from './pages/Login'
 import './index.css'
 import './App.css'
 
+function getPortalHomeUrl() {
+    const envUrl = import.meta.env.VITE_PORTAL_HOME_URL as string | undefined
+    if (envUrl) return envUrl
+
+    const loginUrl = import.meta.env.VITE_PORTAL_LOGIN_URL as string | undefined
+    if (loginUrl) {
+        try {
+            const u = new URL(loginUrl, window.location.origin)
+            u.pathname = u.pathname.replace(/\/login\/?$/, '/')
+            u.search = ''
+            u.hash = ''
+            return u.toString()
+        } catch {
+            // ignore
+        }
+    }
+
+    return `${window.location.origin}/`
+}
+
 function AppShell() {
     const { user, loading, signOut } = useAuth()
     const { currentSite, sites, setCurrentSite, loading: siteLoading } = useSite()
+    const logoSrc = `${import.meta.env.BASE_URL}images/cross-logo.png`
 
     if (loading || siteLoading) return <Spinner />
 
@@ -47,8 +68,11 @@ function AppShell() {
                 <header className="topbar">
                     <div className="brand-group">
                         <div className="brand">
-                            <a href="/" style={{ textDecoration: 'none', color: 'inherit', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                                <img src="/swms/images/cross-logo.png" alt="Cross 로고" className="brand-logo" />
+                            <a
+                                href={getPortalHomeUrl()}
+                                style={{ textDecoration: 'none', color: 'inherit', display: 'flex', alignItems: 'center', gap: '1rem' }}
+                            >
+                                <img src={logoSrc} alt="Cross 로고" className="brand-logo" />
                                 <div className="brand-text">
                                     <p className="brand-label">Cross Specialness Inc.</p>
                                     <strong className="brand-title">스크랩·폐기물 관리시스템(SWMS)</strong>

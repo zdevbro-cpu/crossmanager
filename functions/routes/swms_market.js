@@ -17,15 +17,26 @@ module.exports = (pool) => {
 
         try {
             const q = `
-                WITH mapped AS (
-                    SELECT DISTINCT m.symbol, m.source
-                    FROM swms_market_symbol_map m
-                    WHERE ($2::text IS NULL OR EXISTS (
+                WITH has_coeff AS (
+                    SELECT EXISTS (
                         SELECT 1
                         FROM swms_pricing_coefficients c
-                        WHERE c.site_id = $2::text
-                        AND c.material_type_id = m.material_type_id
-                    ))
+                        WHERE ($2::text IS NULL AND c.site_id IS NULL) OR c.site_id = $2::text
+                    ) AS ok
+                ),
+                mapped AS (
+                    SELECT DISTINCT m.symbol, m.source
+                    FROM swms_market_symbol_map m
+                    WHERE (
+                        $2::text IS NULL
+                        OR (SELECT ok FROM has_coeff) = FALSE
+                        OR EXISTS (
+                            SELECT 1
+                            FROM swms_pricing_coefficients c
+                            WHERE c.site_id = $2::text
+                            AND c.material_type_id = m.material_type_id
+                        )
+                    )
                 ),
                 today AS (
                     SELECT p.symbol, p.source, p.price_usd_per_ton, p.fx_usdkrw, p.price_krw_per_ton, p.updated_at
@@ -111,4 +122,3 @@ module.exports = (pool) => {
 
     return router
 }
-

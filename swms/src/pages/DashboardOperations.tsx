@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { AlertTriangle, ArrowUpRight } from 'lucide-react'
 import {
   Bar,
@@ -12,6 +12,8 @@ import {
 import { useSite } from '../contexts/SiteContext'
 import DashboardHero from './dashboard/DashboardHero'
 import MaterialTrendChart from './dashboard/MaterialTrendChart'
+import SankeyFlowCard from './dashboard/SankeyFlowCard'
+import ZoneHeatmapCard from './dashboard/ZoneHeatmapCard'
 import { formatPct, formatQty } from './dashboard/format'
 import { useSwmsDashboardData } from './dashboard/useSwmsDashboardData'
 
@@ -41,6 +43,7 @@ export default function DashboardOperations() {
   const { currentSite, error, refreshSites } = useSite()
   const siteId = currentSite?.id
   const data = useSwmsDashboardData(siteId)
+  const [zoneViewMode, setZoneViewMode] = useState<'capacity' | 'aging'>('capacity')
 
   const actions = useMemo(() => {
     const items: Array<{
@@ -192,6 +195,17 @@ export default function DashboardOperations() {
 
       <section className="dashboard-grid">
         <div style={{ display: 'grid', gap: '1rem' }}>
+          <SankeyFlowCard response={data.sankey.data} loading={data.sankey.isLoading} height={360} />
+
+          <ZoneHeatmapCard
+            viewMode={zoneViewMode}
+            onChange={setZoneViewMode}
+            capacity={data.zoneHeatCapacity.data}
+            aging={data.zoneHeatAging.data}
+            loading={(zoneViewMode === 'capacity' ? data.zoneHeatCapacity.isLoading : data.zoneHeatAging.isLoading) || false}
+            height={340}
+          />
+
           {/* Today's Unit Price Proposal Removed for Operations View */}
 
           {firstMaterialId ? (
@@ -206,8 +220,8 @@ export default function DashboardOperations() {
               </div>
               <span className="badge badge-tag">{data.outboundByHour.isLoading ? '로딩' : 'TODAY'}</span>
             </div>
-            <div style={{ height: 200, width: '100%' }}>
-              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={200}>
+            <div style={{ height: 220, width: '100%', minWidth: 280, minHeight: 220 }}>
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={220}>
                 <BarChart data={data.outboundByHour.data || []}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.10)" vertical={false} />
                   <XAxis dataKey="hour" stroke="#9fb2cc" tickLine={false} axisLine={false} />

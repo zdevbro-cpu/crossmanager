@@ -80,7 +80,7 @@
 - **재고 흐름 Sankey(입고→선별→보관→출고→정산)**: 선별/보관/정산 단계별 “상태 전이” 데이터가 불완전
   - 최소안: 기존 테이블/상태로 단계 축약(입고/재고/출고/정산) 후 Sankey 구현
   - 정합안: `swms_process_events` 또는 각 도메인 테이블에 “단계/상태/시간” 보강
-- **품목/등급 Heatmap**: “등급” 필드가 현행 도메인에 명확히 존재하지 않음 → `grade`(또는 `quality_grade`) 컬럼 추가/정규화 필요
+- **품목/등급 Heatmap**: 등급(A/B/C) 구분을 반영하려면 `grade` 컬럼이 집계 키에 포함되어야 함(입고/출고/재고)
 - **정산 지연(단계별)**: 송장/검수/세금계산서/입금 등 단계 데이터 부재 → 정산 워크플로우 컬럼/테이블 확장 필요
 - **작업 큐(출고 예정/검수 대기/정산 대기)**: “준비상태(계근표/사진/라벨)” 등의 체크 항목이 부재 → 체크리스트/첨부 테이블 필요
 - **Turnaround Time**: “입차~출차” 정의가 필요(계근 1회/2회인지, Gate 이벤트인지) → 이벤트 모델 확정 필요
@@ -108,7 +108,10 @@
 ### 4.3 API 설계(초안)
 - `GET /api/swms/dashboard/kpi?siteId&date`
 - `GET /api/swms/dashboard/charts/flow?siteId&period`
+- `GET /api/swms/dashboard/charts/sankey?siteId&periodDays=30&mode=category|material|status` (Phase 1: 간이 Flow)
 - `GET /api/swms/dashboard/charts/inventory-heatmap?siteId`
+- `GET /api/swms/dashboard/charts/inventory-zone-heatmap?siteId&view=capacity|aging` (Zone 고정 구획 기준)
+- (Phase 2) `GET /api/swms/dashboard/charts/inventory-aging-heatmap?siteId&bucket=0-7|8-30|31+`
 - `GET /api/swms/dashboard/charts/price-margin?siteId&period&materialTypeId?`
 - `GET /api/swms/dashboard/charts/portfolio?siteId&period`
 - `GET /api/swms/dashboard/charts/outbound-by-hour?siteId&date`
@@ -123,6 +126,30 @@
 - 우측: 실시간 운영/작업 큐(오늘의 작업/게이트/이상 알림)
 - 하단: 리스크/컴플라이언스 요약(올바로/계근편차/SLA 지연 Top)
 
+### 4.4.1 Sankey/Heatmap 구현 상세(`docs/swms/SWMS_생키다이어그램과 히트맵 구현방안.pdf` 반영)
+> 확정 입력(사용자 답변 반영): **Zone(구역) 고정 구획 = Yes**, **등급 = A/B/C**, **Sankey는 선별/보관 단계 포함 필수**
+
+#### A) 히트맵(Heatmap): “뷰 모드 전환 + 드릴다운”을 기본안으로 채택
+- 목적: “어디가 꽉 찼나(포화)”/“어디에 돈이 묶였나(장기 체화)”를 **색의 진하기**로 즉시 파악
+- 기본 UX(권장: PDF 전략 1번 ‘뷰 모드 전환’):
+  - `viewMode=capacity`(적재율) ↔ `viewMode=aging`(체화)
+  - 구역(Zone) 클릭 → 모달/드릴다운에서 해당 구역의 “품목 매트릭스(그리드)” 상세 표시
+- Phase 1(운영 우선, 고정 Zone 전제):
+  - Physical Layout Heatmap(공간 기반): `swms_warehouses`를 Zone으로 사용(야적장/창고 구역) + `capacity` 기준 적재율 표시
+  - Grid Heatmap(매트릭스): “품목×등급(A/B/C)” 집계로 제공(재고 집중/편중 확인)
+- Phase 2(정합/확장):
+  - Aging Heatmap(체화 기반): **입고일/로트 단위**로 “재고 나이(Age)” 계산이 가능해야 함(로트/이력 모델 필요)
+
+#### B) 생키(Sankey): “노드/링크 기반 링크 테이블(또는 MV) + 기간 집계”로 구현
+- 목적: 스크랩/폐기물의 **흐름(Flow)**과 **양(Quantity)**을 동시에 보여 “자원 회수율(Yield)”과 “손실/비용”을 직관적으로 표시
+- 데이터 형태(필수): `source`, `target`, `value` (예: 톤) 형태의 링크 리스트
+- Phase 1(선별/보관 포함, 최소 이벤트 모델 도입):
+  - 권장 노드(초안): `입고` → `선별` → `보관(Zone)` → `출고(스크랩/폐기물)` → `정산(확정/대기)`
+  - 분기 기준(초안): `swms_material_types.category`(또는 `is_scrap`) + `grade(A/B/C)`
+  - 전제: 선별/보관을 표현하려면 “단계 전이” 기록이 필요 → `swms_process_events`(또는 `swms_inventory_movements`)를 Phase 1에 포함
+- Phase 2(정합 Flow/손실까지 확장):
+  - 공정 손실(Loss: 감량/분진/수분) 및 파쇄/압축 등의 세부 단계까지 확장(`loss_type`, `loss_qty` 등)
+
 ### 4.5 실시간 동기화(Phase 선택)
 - Phase 1: React Query polling(예: 10~30초) + “갱신 플래시” UI
 - Phase 2: WebSocket(서버 푸시) 또는 Firestore(onSnapshot) 브릿지
@@ -136,11 +163,28 @@
 - `swms_anomalies`: 이상 징후 탐지 결과(유형, 심각도, 기준값/관측값, 처리 상태)
 - `swms_allbaro_sync`: 올바로 연동 상태/에러 로그/재시도 정보
 - `swms_claims`: 클레임/반품/단가 재협상 등 이력(거래처/품목/기간/사유/영향금액)
+- (Phase 1) `swms_process_events`(또는 `swms_inventory_movements`): 공정/단계 이벤트(선별/보관/출고/정산)와 중량 변화 기록(Sankey용)
+- (Phase 2) `swms_inventory_lots`: 입고일/로트 단위 이력(체화/Aging Heatmap 및 손실 추적용)
 
 ### 5.2 기존 테이블 보강(최소안)
-- `swms_inbounds/outbounds`: `grade`(등급), `inspection_status`, `required_docs_status`(또는 개별 boolean)
+- `swms_inbounds/outbounds`: `grade`(A/B/C), `inspection_status`, `required_docs_status`(또는 개별 boolean)
+- `swms_inventory`: 집계 키에 `grade` 포함(“품목×등급” 재고) + (선택) `lot_id` 참조(체화 대응)
+- `swms_warehouses`: `capacity`, `type(INDOOR/OUTDOOR/YARD)` 등 Zone 메타데이터(Physical Layout Heatmap)
 - `swms_settlements`: `invoice_issued_at`, `paid_at`, `paid_amount` 등 현금흐름 추적용 컬럼
 - `swms_material_types`: `is_scrap`(또는 `category` 표준화)로 수익/비용 분리 명확화
+
+### 5.3 병목(선별) 신호(추가 확정)
+- 목적: Sankey에서 “어디가 막혔는지”를 **시간 기준**으로 판별
+- 판정 기준(확정): **선별 평균 체류시간(Avg Lead Time)** ≥ 24시간이면 병목
+  - 산식: `(SORT→STORAGE occurred_at) - (INBOUND→SORT occurred_at)` (단위: hours)
+  - 보조: P90 체류시간(참고용)
+  - 이벤트 페어링 키: `swms_process_events.meta.flowId`
+- API 반영: `GET /api/swms/dashboard/charts/sankey` 응답에 `signals.sortBottleneck` 포함(avg/p90/samples/threshold/isBottleneck)
+- UI 반영: 병목 시 `선별` 노드/절차 표시를 강조 + 툴팁에 평균 체류시간 표시
+
+### 5.4 집계 뷰(Materialized View) 제안(차트 전용)
+- `swms_dashboard_sankey_links_daily`: `site_id, date, mode, source, target, value_qty` (Sankey 링크)
+- `swms_dashboard_inventory_zone_daily`: `site_id, date, warehouse_id(zone_id), fill_rate_pct, max_age_days` (Zone Heatmap)
 
 ## 6. 개발 단계(초안)
 ### Phase 1 (MVP: 2~4주 범위 권장)
@@ -175,8 +219,8 @@
 
 ### 7.3 “등급/배차/정산단계” 모델링(노멀 정의)
 - 등급(Grade):
-  - Phase 1: “품목(material_type)” 단위로만 Heatmap을 제공하고, 등급 축은 `N/A`(또는 단일 등급)로 처리한다.
-  - Phase 2: `grade`(또는 `quality_grade`) 컬럼/정규화 도입 후 “품목×등급” Heatmap으로 확장한다.
+  - Phase 1: 등급(A/B/C) 축을 포함한 Heatmap(“품목×등급”)을 제공한다.
+  - Phase 2: 필요 시 `grade` 정규화(마스터 테이블) 및 등급 변경/클레임 워크플로우를 확장한다.
 - 배차 진행률:
   - Phase 1: 배차 계획 데이터가 없으므로 KPI에서 숨김 또는 “준비중(데이터 미정)” 처리한다.
   - Phase 2: `swms_dispatch_plans` 신설 후 진행률 제공.
@@ -188,6 +232,8 @@
 - 처리량 기준 변경 시: KPI/차트의 집계 원천(`weighings` vs `in/outbounds` vs `generations`) 및 단위 표기
 - 예상/확정 매출 재정의 시: “확정” 기준 이벤트(출고 승인/정산 확정/세금계산서/입금)와 관련 컬럼/워크플로우
 - 등급/배차/정산단계 확정 시: 스키마 추가(`grade`, `dispatch`, `settlement workflow`) + Work Queue 규칙 업데이트
+- Sankey 단계 확정 시: “단계(노드) 정의” 및 링크 집계 기준(입고/공정/출고/정산/폐기/손실)과 필요한 이벤트 모델 확정
+- Heatmap(공간/체화) 확정 시: Zone 구획 가능 여부, Zone 용량 기준(톤/부피), 체화 기준일(입고일/최종이동일) 확정
 
 ## 7.5 변경 이력(간단 로그)
 - 2025-12-15: 의사결정 대기 항목을 “노멀 정의(초안)”로 전환(추후 확정 시 수정 전제)

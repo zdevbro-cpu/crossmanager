@@ -1887,6 +1887,55 @@ app.delete('/api/equipment/:equipmentId/documents/:documentId', async (req, res)
     }
 })
 
+// --- EMS alias routes (backward compatibility: /api/ems/equipment -> /api/equipment) ---
+app.get('/api/ems/equipment', async (req, res) => {
+    try {
+        const { rows } = await pool.query('SELECT * FROM equipment ORDER BY created_at DESC')
+        res.json(rows)
+    } catch (err) {
+        console.error(err)
+        res.status(500).json({ error: 'Failed to fetch equipment' })
+    }
+})
+
+app.get('/api/ems/equipment/:id', async (req, res) => {
+    try {
+        const { id } = req.params
+        const { rows } = await pool.query('SELECT * FROM equipment WHERE id = $1', [id])
+        if (rows.length === 0) return res.status(404).json({ error: 'Equipment not found' })
+        res.json(rows[0])
+    } catch (err) {
+        console.error(err)
+        res.status(500).json({ error: 'Failed to fetch equipment' })
+    }
+})
+
+app.post('/api/ems/equipment', async (req, res) => {
+    // Delegate to existing handler
+    req.url = req.url.replace('/api/ems/equipment', '/api/equipment')
+    app._router.handle(req, res)
+})
+
+app.put('/api/ems/equipment/:id', async (req, res) => {
+    req.url = req.url.replace('/api/ems/equipment', '/api/equipment')
+    app._router.handle(req, res)
+})
+
+app.delete('/api/ems/equipment/:id', async (req, res) => {
+    req.url = req.url.replace('/api/ems/equipment', '/api/equipment')
+    app._router.handle(req, res)
+})
+
+app.post('/api/ems/equipment/:id/upload', upload.single('file'), async (req, res) => {
+    req.url = req.url.replace('/api/ems/equipment', '/api/equipment')
+    app._router.handle(req, res)
+})
+
+app.delete('/api/ems/equipment/:equipmentId/documents/:documentId', async (req, res) => {
+    req.url = req.url.replace('/api/ems/equipment', '/api/equipment')
+    app._router.handle(req, res)
+})
+
 app.get('/', (req, res) => {
     res.send('Cross PMS API Server is running')
 })
@@ -2799,7 +2848,8 @@ app.delete('/api/projects/:id', async (req, res) => {
 
 
 // ==================== SWMS APIs ====================
-require('./swms_routes')(app, pool)
+// NOTE: Deprecated legacy SWMS router (duplicates newer /routes/swms* and can break when schemas diverge).
+// require('./swms_routes')(app, pool)
 
 
 // ==================== SUMMARY APIs ====================
