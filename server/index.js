@@ -152,9 +152,32 @@ async function ensureSwmsDashboardSchema() {
     }
 }
 
+async function ensurePmsResourceSchema() {
+    try {
+        const migrationsDir = path.join(__dirname, 'migrations')
+        if (!fs.existsSync(migrationsDir)) return
+
+        const files = fs
+            .readdirSync(migrationsDir)
+            .filter((f) => /^\\d{8}_pms_resource.*\\.sql$/i.test(f))
+            .sort()
+
+        for (const file of files) {
+            const fullPath = path.join(migrationsDir, file)
+            const sql = fs.readFileSync(fullPath, 'utf8')
+            await pool.query(sql)
+        }
+
+        if (files.length > 0) console.log('[Schema] PMS resource schema migrations OK')
+    } catch (e) {
+        console.warn('[Schema] PMS resource schema apply failed:', e.message)
+    }
+}
+
 // Fire-and-forget: do not block server start
 ensureDocumentSchema()
 ensureSwmsDashboardSchema()
+ensurePmsResourceSchema()
 
 pool.connect((err) => {
     if (err) console.error('Database connection error', err.stack)
@@ -380,6 +403,7 @@ app.use('/api/dashboard', createDashboardRouter(pool))
 app.use('/api/reports', require('./routes/reports')(pool))
 app.use('/api/sms/checklists', require('./routes/sms_checklists')(pool))
 app.use('/api/ems', require('./routes/ems')(pool))
+app.use('/api/pms/resource', require('./routes/pms_resource')(pool))
 app.use('/api/swms', require('./routes/swms')(pool))
 app.use('/api/swms', require('./routes/swms_analytics')(pool))
 app.use('/api/swms', require('./routes/swms_dashboard')(pool))
