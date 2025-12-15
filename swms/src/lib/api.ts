@@ -1,7 +1,7 @@
 import axios from 'axios'
 
 // API 서버 기본 URL (환경 변수 또는 기본값)
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api'
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api'
 
 // Axios 인스턴스 생성
 export const apiClient = axios.create({
@@ -14,9 +14,17 @@ export const apiClient = axios.create({
 // 요청 인터셉터 (예: 인증 토큰 추가)
 apiClient.interceptors.request.use(
     (config) => {
-        // TODO: Firebase Auth 토큰 등을 헤더에 추가하는 로직 필요
-        // const token = await auth.currentUser?.getIdToken()
-        // if (token) config.headers.Authorization = `Bearer ${token}`
+        try {
+            const stored = localStorage.getItem('swms-local-user')
+            if (stored) {
+                const user = JSON.parse(stored)
+                if (user.role) {
+                    config.headers['x-user-role'] = user.role
+                }
+            }
+        } catch (e) {
+            // ignore
+        }
         return config
     },
     (error) => Promise.reject(error)

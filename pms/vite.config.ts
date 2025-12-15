@@ -16,6 +16,7 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     publicDir: 'public',
     server: {
+      port: 5176,
       proxy: {
         '/api': {
           target: apiProxyTarget,

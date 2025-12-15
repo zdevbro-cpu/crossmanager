@@ -1,6 +1,21 @@
 {
+  "name": "cross-manager-root",
+  "private": true,
+  "license": "UNLICENSED",
+  "scripts": {
+    "dev:all": "concurrently \"npm run server\" \"npm run portal\" \"npm run pms\" \"npm run ems\" \"npm run swms\" \"npm run sms\"",
+    "server": "cd Server && node index.js",
+    "portal": "cd Portal && npm run dev",
+    "pms": "cd PMS && npm run dev",
+    "ems": "cd EMS && npm run dev",
+    "swms": "cd SWMS && npm run dev",
+    "sms": "cd SMS && npm run dev"
+  },
   "dependencies": {
     "dotenv": "^17.2.3",
     "firebase": "^12.6.0"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
   }
 }

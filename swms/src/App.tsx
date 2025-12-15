@@ -8,7 +8,8 @@ import RequireAuth from './components/RequireAuth'
 import Spinner from './components/Spinner'
 
 // Pages
-import DashboardPage from './pages/Dashboard'
+import DashboardOperations from './pages/DashboardOperations'
+import DashboardExecutive from './pages/DashboardExecutive'
 import GenerationPage from './pages/Generation'
 import WeighingPage from './pages/Weighing'
 import InboundPage from './pages/Inbound'
@@ -46,11 +47,13 @@ function AppShell() {
                 <header className="topbar">
                     <div className="brand-group">
                         <div className="brand">
-                            <img src="images/cross-logo.png" alt="Cross 로고" className="brand-logo" />
-                            <div className="brand-text">
-                                <p className="brand-label">Cross Specialness Inc.</p>
-                                <strong className="brand-title">스크랩·폐기물 관리시스템(SWMS)</strong>
-                            </div>
+                            <a href="/" style={{ textDecoration: 'none', color: 'inherit', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                <img src="/swms/images/cross-logo.png" alt="Cross 로고" className="brand-logo" />
+                                <div className="brand-text">
+                                    <p className="brand-label">Cross Specialness Inc.</p>
+                                    <strong className="brand-title">스크랩·폐기물 관리시스템(SWMS)</strong>
+                                </div>
+                            </a>
                         </div>
                     </div>
 
@@ -94,7 +97,7 @@ function AppShell() {
                                 >
                                     {sites.map((s) => (
                                         <option key={s.id} value={s.id}>
-                                            {s.company_name ? `${s.company_name} - ${s.name}` : s.name}
+                                            {s.name}
                                         </option>
                                     ))}
                                 </select>
@@ -120,7 +123,8 @@ function AppShell() {
                 <main className="content">
                     <Routes>
                         <Route path="/login" element={<LoginPage />} />
-                        <Route path="/" element={<RequireAuth><DashboardPage /></RequireAuth>} />
+                        <Route path="/" element={<RequireAuth><DashboardOperations /></RequireAuth>} />
+                        <Route path="/dashboard/executive" element={<RequireAuth><DashboardExecutive /></RequireAuth>} />
                         <Route path="/generation" element={<RequireAuth><GenerationPage /></RequireAuth>} />
                         <Route path="/weighing" element={<RequireAuth><WeighingPage /></RequireAuth>} />
                         <Route path="/inbound" element={<RequireAuth><InboundPage /></RequireAuth>} />
@@ -146,4 +150,3 @@ export default function App() {
         </ProjectProvider>
     )
 }
-

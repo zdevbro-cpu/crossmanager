@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useToast } from '../components/ToastProvider'
 import { Plus, Search, Filter, Edit, Trash2 } from 'lucide-react'
+import { apiClient } from '../lib/api'
 
 interface Equipment {
     id: string
@@ -30,11 +31,8 @@ function EquipmentListPage() {
 
     const fetchEquipment = async () => {
         try {
-            const res = await fetch('http://localhost:3000/api/equipment')
-            if (res.ok) {
-                const data = await res.json()
-                setEquipment(data)
-            }
+            const res = await apiClient.get('/ems/equipment')
+            setEquipment(res.data)
         } catch (err) {
             console.error(err)
             show('장비 목록을 불러오는데 실패했습니다.', 'error')
@@ -58,16 +56,9 @@ function EquipmentListPage() {
         if (!window.confirm(`"${name}" 장비를 삭제하시겠습니까?`)) return
 
         try {
-            const res = await fetch(`http://localhost:3000/api/equipment/${id}`, {
-                method: 'DELETE'
-            })
-
-            if (res.ok) {
-                show('장비가 삭제되었습니다.', 'success')
-                fetchEquipment()
-            } else {
-                show('삭제에 실패했습니다.', 'error')
-            }
+            await apiClient.delete(`/ems/equipment/${id}`)
+            show('장비가 삭제되었습니다.', 'success')
+            fetchEquipment()
         } catch (err) {
             console.error(err)
             show('삭제 중 오류가 발생했습니다.', 'error')

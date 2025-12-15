@@ -25,11 +25,13 @@ function AppContent() {
         <header className="topbar">
           <div className="brand-group">
             <div className="brand">
-              <img src="images/cross-logo.png" alt="Cross 로고" className="brand-logo" />
-              <div className="brand-text">
-                <p className="brand-label">Cross Specialness Inc.</p>
-                <strong className="brand-title">장비 관리시스템(EMS)</strong>
-              </div>
+              <a href="/" style={{ textDecoration: 'none', color: 'inherit', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <img src="images/cross-logo.png" alt="Cross 로고" className="brand-logo" />
+                <div className="brand-text">
+                  <p className="brand-label">Cross Specialness Inc.</p>
+                  <strong className="brand-title">장비 관리시스템(EMS)</strong>
+                </div>
+              </a>
             </div>
           </div>
 

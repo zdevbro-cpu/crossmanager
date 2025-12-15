@@ -417,7 +417,7 @@ export default function WeighingPage() {
 
                                     <div className="form-grid three">
                                         <label>
-                                            <span>프로젝트 (선택)</span>
+                                            <span>현장 (프로젝트)</span>
                                             <select
                                                 className="input"
                                                 value={formData.project_id}

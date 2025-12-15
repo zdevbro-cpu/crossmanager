@@ -12,8 +12,8 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType>({
   user: null,
   loading: true,
-  signIn: async () => {},
-  signOut: async () => {},
+  signIn: async () => { },
+  signOut: async () => { },
 })
 
 const getPortalLoginUrl = () => {
@@ -32,10 +32,40 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    // SSO Check
+    const params = new URLSearchParams(window.location.search)
+    const ssoUserStr = params.get('sso_user')
+    const STORAGE_KEY = 'ems-local-user'
+
+    if (ssoUserStr) {
+      try {
+        const ssoUser = JSON.parse(decodeURIComponent(ssoUserStr))
+        const localUser = {
+          uid: ssoUser.uid || 'sso-user',
+          email: ssoUser.email,
+          displayName: ssoUser.name,
+          role: ssoUser.role,
+          mock: true
+        }
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(localUser))
+        setUser(localUser)
+        setLoading(false)
+        window.history.replaceState({}, '', window.location.pathname)
+        return
+      } catch (e) {
+        console.error('SSO Login Failed:', e)
+      }
+    }
+
     if (!auth) {
+      const stored = localStorage.getItem(STORAGE_KEY)
+      if (stored) {
+        setUser(JSON.parse(stored))
+      }
       setLoading(false)
       return
     }
+
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setUser(user)
       setLoading(false)
