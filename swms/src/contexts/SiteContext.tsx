@@ -10,6 +10,7 @@ interface SiteContextType {
     warehouses: Warehouse[]
     setCurrentSite: (site: Site) => void
     loading: boolean
+    error: string | null
     refreshSites: () => Promise<void>
 }
 
@@ -21,10 +22,12 @@ export function SiteProvider({ children }: { children: ReactNode }) {
     const [currentSite, setCurrentSite] = useState<Site | null>(null)
     const [warehouses, setWarehouses] = useState<Warehouse[]>([])
     const [loading, setLoading] = useState(true)
+    const [error, setError] = useState<string | null>(null)
 
     const fetchSiteData = async () => {
         try {
             setLoading(true)
+            setError(null)
             // 임시: 단일 회사/사이트 구조라고 가정하고 첫 번째 데이터를 가져옴
             // 실제로는 로그인한 유저의 소속 회사/사이트를 가져와야 함 API 구현 필요
             // 여기서는 DB 초기화 시 생성한 데이터를 하드코딩된 API나 쿼리로 가정하거나
@@ -47,6 +50,36 @@ export function SiteProvider({ children }: { children: ReactNode }) {
             }
         } catch (err) {
             console.error('Failed to fetch site data:', err)
+            const message = err instanceof Error ? err.message : 'Unknown error'
+            setError(message)
+
+            // Fallback for local/dev: render dashboards even when site API is unavailable.
+            const fallbackCompany: Company = { id: 'CMD-001', code: 'CMD', name: 'Cross Material Dynamics' }
+            const fallbackSites: Site[] = [
+                {
+                    id: 'FAC-001',
+                    company_id: 'CMD-001',
+                    code: 'FAC-001',
+                    name: 'FAC-001 (샘플 현장)',
+                    type: 'FACTORY',
+                    address: 'Local/Dev',
+                    is_active: true,
+                    company_name: 'Cross Material Dynamics',
+                },
+            ]
+            setCompany(fallbackCompany)
+            setSites(fallbackSites)
+            setCurrentSite(fallbackSites[0])
+            setWarehouses([
+                {
+                    id: 'wh-default-1',
+                    site_id: 'FAC-001',
+                    code: 'wh-default-1',
+                    name: '야적장 (샘플)',
+                    type: 'YARD',
+                    is_active: true,
+                },
+            ])
         } finally {
             setLoading(false)
         }
@@ -78,6 +111,7 @@ export function SiteProvider({ children }: { children: ReactNode }) {
         warehouses,
         setCurrentSite: handleSetCurrentSite,
         loading,
+        error,
         refreshSites: fetchSiteData
     }
 

@@ -260,7 +260,7 @@ export default function InboundPage() {
                                             />
                                         </label>
                                         <label>
-                                            <span>프로젝트 (선택)</span>
+                                            <span>현장 (프로젝트)</span>
                                             <select
                                                 className="input"
                                                 value={form.project_id}

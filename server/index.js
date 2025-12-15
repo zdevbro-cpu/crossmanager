@@ -77,11 +77,19 @@ const dbConfig = {
 }
 
 // Socket support for Cloud SQL
-if (process.env.DB_HOST && process.env.DB_HOST.startsWith('/cloudsql')) {
+// Connection preference:
+// 1) Cloud SQL Unix socket on GCP or when USE_CLOUD_SQL_SOCKET=true
+// 2) TCP(DB_HOST) locally or when FORCE_TCP=true
+const runningOnGcp = !!(process.env.K_SERVICE || process.env.FUNCTION_TARGET)
+const preferSocket = process.env.FORCE_TCP !== 'true' && (process.env.USE_CLOUD_SQL_SOCKET === 'true' || runningOnGcp)
+
+if (preferSocket && process.env.DB_HOST && process.env.DB_HOST.startsWith('/cloudsql')) {
     dbConfig.host = process.env.DB_HOST
+    console.log('[DB] Using Cloud SQL Socket:', dbConfig.host)
 } else {
-    // Local SSL setting
+    // Local / TCP
     dbConfig.ssl = { rejectUnauthorized: false }
+    console.log('[DB] Using TCP Connection:', dbConfig.host, dbConfig.port)
 }
 
 const pool = new Pool(dbConfig)
@@ -122,8 +130,31 @@ async function ensureDocumentSchema() {
     }
 }
 
+async function ensureSwmsDashboardSchema() {
+    try {
+        const migrationsDir = path.join(__dirname, 'migrations')
+        if (!fs.existsSync(migrationsDir)) return
+
+        const files = fs
+            .readdirSync(migrationsDir)
+            .filter((f) => /^\\d{8}_swms_.*\\.sql$/i.test(f))
+            .sort()
+
+        for (const file of files) {
+            const fullPath = path.join(migrationsDir, file)
+            const sql = fs.readFileSync(fullPath, 'utf8')
+            await pool.query(sql)
+        }
+
+        if (files.length > 0) console.log('[Schema] SWMS schema migrations OK')
+    } catch (e) {
+        console.warn('[Schema] SWMS schema apply failed:', e.message)
+    }
+}
+
 // Fire-and-forget: do not block server start
 ensureDocumentSchema()
+ensureSwmsDashboardSchema()
 
 pool.connect((err) => {
     if (err) console.error('Database connection error', err.stack)
@@ -348,8 +379,12 @@ app.use('/api/documents', createDocumentsRouter(pool, uploadsDir))
 app.use('/api/dashboard', createDashboardRouter(pool))
 app.use('/api/reports', require('./routes/reports')(pool))
 app.use('/api/sms/checklists', require('./routes/sms_checklists')(pool))
-app.use('/api/ems', require('./routes/ems_summary')(pool))
-app.use('/api/swms', require('./routes/swms_summary')(pool))
+app.use('/api/ems', require('./routes/ems')(pool))
+app.use('/api/swms', require('./routes/swms')(pool))
+app.use('/api/swms', require('./routes/swms_analytics')(pool))
+app.use('/api/swms', require('./routes/swms_dashboard')(pool))
+app.use('/api/swms', require('./routes/swms_market')(pool))
+app.use('/api/swms', require('./routes/swms_pricing')(pool))
 
 // Utility helpers
 const todayStr = () => new Date().toISOString().split('T')[0]
@@ -2365,19 +2400,7 @@ app.delete('/api/projects/:id', async (req, res) => {
         res.status(500).json({ error: 'Failed to delete project' })
     }
 })
-// ==================== SWMS APIs ====================
-// ==================== SWMS APIs ====================
-require('./swms_routes')(app, pool)
 
-// ==================== PMS/SMS/EMS Integration APIs for Reports ====================
-const emsSummaryRouter = require('./routes/ems_summary')(pool)
-app.use('/api/ems', emsSummaryRouter)
-
-const smsChecklistsRouter = require('./routes/sms_checklists')(pool)
-app.use('/api/sms/checklists', smsChecklistsRouter) // Note path usage in ReportEditor
-
-const swmsSummaryRouter = require('./routes/swms_summary')(pool)
-app.use('/api/swms', swmsSummaryRouter)
 
 app.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}`)

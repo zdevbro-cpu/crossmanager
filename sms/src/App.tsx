@@ -42,11 +42,13 @@ function AppShell() {
         <header className="topbar">
           <div className="brand-group">
             <div className="brand">
-              <img src="images/cross-logo.png" alt="Cross 로고" className="brand-logo" />
-              <div className="brand-text">
-                <p className="brand-label">Cross Specialness Inc.</p>
-                <strong className="brand-title">안전관리 시스템 (SMS)</strong>
-              </div>
+              <a href="/" style={{ textDecoration: 'none', color: 'inherit', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <img src="images/cross-logo.png" alt="Cross 로고" className="brand-logo" />
+                <div className="brand-text">
+                  <p className="brand-label">Cross Specialness Inc.</p>
+                  <strong className="brand-title">안전관리 시스템 (SMS)</strong>
+                </div>
+              </a>
             </div>
           </div>
 

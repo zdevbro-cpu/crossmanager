@@ -111,7 +111,8 @@ const dbConfig = {
 // 1) Cloud SQL Unix socket on GCP or when USE_CLOUD_SQL_SOCKET=true
 // 2) TCP(DB_HOST) locally or when FORCE_TCP=true
 const runningOnGcp = !!(process.env.K_SERVICE || process.env.FUNCTION_TARGET)
-const preferSocket = process.env.FORCE_TCP !== 'true' && (process.env.USE_CLOUD_SQL_SOCKET === 'true' || runningOnGcp)
+// Fix: Prioritize Socket on GCP regardless of FORCE_TCP (which is for local dev)
+const preferSocket = runningOnGcp || (process.env.FORCE_TCP !== 'true' && process.env.USE_CLOUD_SQL_SOCKET === 'true')
 const instance = process.env.INSTANCE_CONNECTION_NAME || 'crossmanager-480401:asia-northeast3:crossmanager'
 
 if (preferSocket && instance) {
@@ -2817,5 +2818,12 @@ if (require.main === module) {
         console.log(`Server is running on http://localhost:${PORT}`)
     })
 }
+
+// --- SWMS Routes ---
+app.use('/api/swms', require('./routes/swms')(pool))
+app.use('/api/swms', require('./routes/swms_analytics')(pool))
+app.use('/api/swms', require('./routes/swms_dashboard')(pool))
+app.use('/api/swms', require('./routes/swms_market')(pool))
+app.use('/api/swms', require('./routes/swms_pricing')(pool))
 
 module.exports = app

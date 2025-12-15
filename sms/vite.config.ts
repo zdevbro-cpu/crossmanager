@@ -6,4 +6,14 @@ export default defineConfig({
   base: '/sms/',
   plugins: [react()],
   publicDir: '../Public',
+  server: {
+    port: 5177,
+    proxy: {
+      '/api': {
+        target: 'http://localhost:3007',
+        changeOrigin: true,
+        secure: false,
+      }
+    }
+  }
 })

@@ -11,6 +11,7 @@ type LocalUser = {
   uid: string
   email: string | null
   displayName?: string | null
+  role?: string
   mock: true
 }
 
@@ -43,6 +44,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    // SSO Check
+    const params = new URLSearchParams(window.location.search)
+    const ssoUserStr = params.get('sso_user')
+    if (ssoUserStr) {
+      try {
+        const ssoUser = JSON.parse(decodeURIComponent(ssoUserStr))
+        const localUser: LocalUser = {
+          uid: ssoUser.uid || 'sso-user',
+          email: ssoUser.email,
+          displayName: ssoUser.name,
+          role: ssoUser.role,
+          mock: true
+        }
+        // Save to local storage for persistence
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(localUser))
+        setUser(localUser)
+        setLoading(false)
+        // Clean URL
+        window.history.replaceState({}, '', window.location.pathname)
+        return
+      } catch (e) {
+        console.error('SSO Login Failed:', e)
+      }
+    }
+
     if (!auth) {
       const stored = localStorage.getItem(STORAGE_KEY)
       if (stored) {

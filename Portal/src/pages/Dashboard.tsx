@@ -53,7 +53,22 @@ export default function Dashboard() {
 
     const handleSystemClick = (sys: any, allowed: boolean) => {
         if (!allowed) return;
-        window.location.href = sys.url;
+
+        let targetUrl = sys.url;
+        // Simple SSO mechanism: pass user info via query param
+        // In production, use shared cookies or a proper SSO token exchange
+        if (user) {
+            const userInfo = encodeURIComponent(JSON.stringify({
+                uid: user.uid,
+                email: user.email,
+                name: user.name, // ensure these fields exist on user object
+                role: user.role
+            }));
+            const separator = targetUrl.includes('?') ? '&' : '?';
+            targetUrl += `${separator}sso_user=${userInfo}`;
+        }
+
+        window.location.href = targetUrl;
     };
 
     // If user has no specific allowedSystems, default to ALL for now (or strictly none?)

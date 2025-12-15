@@ -8,7 +8,6 @@ import './Page.css'
 interface Settlement {
     id: string
     vendor_name: string
-    settlement_date: string
     start_date: string
     end_date: string
     total_amount: number
@@ -167,7 +166,7 @@ export default function SettlementPage() {
     }
 
     const handleDelete = async (id: string, fromDetail = false) => {
-        if (!confirm('정만 정산서를 삭제하시겠습니까? (매각 내역은 삭제되지 않고 미정산 상태로 돌아갑니다)')) return
+        if (!confirm('정말 정산서를 삭제하시겠습니까? (매각 내역은 삭제되지 않고 미정산 상태로 돌아갑니다)')) return
         try {
             await apiClient.delete(`/swms/settlements/${id}`)
             show('삭제되었습니다.', 'success')
@@ -184,7 +183,7 @@ export default function SettlementPage() {
     const formatMoney = (n: number) => n.toLocaleString()
     const getSettlementNo = (s: Settlement) => {
         // Pseudo logic: SET-YYYYMMDD-XXXX
-        const datePart = new Date(s.settlement_date).toISOString().split('T')[0].replace(/-/g, '')
+        const datePart = new Date(s.created_at).toISOString().split('T')[0].replace(/-/g, '')
         const idPart = s.id.substring(0, 4).toUpperCase()
         return `SET-${datePart}-${idPart}`
     }
