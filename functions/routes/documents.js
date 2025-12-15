@@ -340,6 +340,123 @@ const createDocumentsRouter = (pool, uploadsDir) => {
     }
   })
 
+  // --- Folder Management APIs ---
+
+  // Create Folder (Empty Document with type='FOLDER')
+  router.post('/folder', async (req, res) => {
+    const { projectId, category } = req.body
+    if (!category || !category.trim()) return res.status(400).json({ error: 'Category name required' })
+
+    try {
+      // Check if folder already exists
+      const existing = await pool.query(`
+        SELECT id FROM documents 
+        WHERE project_id = $1 AND category = $2 AND type = 'FOLDER'
+      `, [projectId, category])
+
+      if (existing.rows.length > 0) {
+        return res.json({ message: 'Folder already exists' })
+      }
+
+      // Create folder placeholder
+      await pool.query(`
+        INSERT INTO documents (
+          project_id, category, type, name, status, security_level
+        ) VALUES ($1, $2, 'FOLDER', $2, 'FOLDER', 'NORMAL')
+      `, [projectId, category])
+
+      res.status(201).json({ message: 'Folder created' })
+
+    } catch (err) {
+      console.error('Create folder error:', err)
+      res.status(500).json({ error: 'Failed to create folder' })
+    }
+  })
+
+  // Rename Folder (Update category for all docs in it)
+  router.patch('/category', async (req, res) => {
+    const { projectId, oldCategory, newCategory } = req.body
+    if (!oldCategory || !newCategory) return res.status(400).json({ error: 'Both category names required' })
+
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+
+      // Update folder placeholder
+      await client.query(`
+        UPDATE documents 
+        SET category = $1, name = $1
+        WHERE project_id = $2 AND category = $3 AND type = 'FOLDER'
+      `, [newCategory, projectId, oldCategory])
+
+      // Update content documents
+      await client.query(`
+        UPDATE documents 
+        SET category = $1 
+        WHERE project_id = $2 AND category = $3
+      `, [newCategory, projectId, oldCategory])
+
+      await client.query('COMMIT')
+      res.json({ message: 'Category renamed' })
+    } catch (err) {
+      await client.query('ROLLBACK')
+      console.error('Rename category error:', err)
+      res.status(500).json({ error: 'Failed to rename category' })
+    } finally {
+      client.release()
+    }
+  })
+
+  // Delete Folder (Delete all docs in category)
+  router.delete('/category', async (req, res) => {
+    const { projectId, category } = req.query
+    if (!projectId || !category) return res.status(400).json({ error: 'Project ID and Category required' })
+
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+
+      // 1. Find all docs in this category to delete files from storage
+      const fileDocsRes = await client.query(`
+        SELECT v.file_path 
+        FROM documents d
+        JOIN document_versions v ON d.id = v.document_id
+        WHERE d.project_id = $1 AND d.category = $2
+      `, [projectId, category])
+
+      for (const row of fileDocsRes.rows) {
+        if (bucket && row.file_path && !row.file_path.startsWith('http') && !row.file_path.startsWith('/')) {
+          try { await bucket.file(row.file_path).delete() } catch (e) {
+            console.warn(`[Delete Folder] Failed to delete file ${row.file_path}:`, e.message)
+          }
+        }
+      }
+
+      // 2. Explicitly delete versions first (Safety measure)
+      await client.query(`
+        DELETE FROM document_versions 
+        WHERE document_id IN (
+            SELECT id FROM documents WHERE project_id = $1 AND category = $2
+        )
+      `, [projectId, category])
+
+      // 3. Delete all db records (Folder placeholder + actual docs)
+      const delRes = await client.query(`
+        DELETE FROM documents 
+        WHERE project_id = $1 AND category = $2
+      `, [projectId, category])
+
+      await client.query('COMMIT')
+      res.json({ message: 'Folder deleted', count: delRes.rowCount })
+    } catch (err) {
+      await client.query('ROLLBACK')
+      console.error('Delete folder error:', err)
+      res.status(500).json({ error: 'Failed to delete folder', details: err.message, code: err.code })
+    } finally {
+      client.release()
+    }
+  })
+
   // 4. Get Document Detail (with Signed URL)
   router.get('/:id', async (req, res) => {
     try {
@@ -490,6 +607,7 @@ const createDocumentsRouter = (pool, uploadsDir) => {
       const docRes = await client.query('SELECT current_version FROM documents WHERE id = $1', [id])
       if (docRes.rows.length > 0) {
         const currentVer = docRes.rows[0].current_version
+
         if (currentVer === targetVer.version) {
           const latestRes = await client.query('SELECT version FROM document_versions WHERE document_id = $1 ORDER BY created_at DESC LIMIT 1', [id])
           if (latestRes.rows.length > 0) {
@@ -511,6 +629,9 @@ const createDocumentsRouter = (pool, uploadsDir) => {
       client.release()
     }
   })
+
+
+
 
   return router
 }

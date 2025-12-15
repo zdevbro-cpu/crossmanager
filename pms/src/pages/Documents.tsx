@@ -142,7 +142,7 @@ function DocumentTree({ docs, onDelete, onPrint, onView, onRename, onRenameFile,
           <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
             {grouped[cat].filter(d => d.type !== 'FOLDER').length === 0 ? (
               <div style={{ padding: '1rem', textAlign: 'center', color: '#868e96', fontSize: '0.9rem' }}>
-                (?깆깮???뚯씪 ?놁쓬)
+                (폴더에 파일 없음)
               </div>
             ) : (
               grouped[cat].filter(d => d.type !== 'FOLDER').map(d => (
