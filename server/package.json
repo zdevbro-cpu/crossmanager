@@ -5,7 +5,8 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "dashboard:ingest": "node jobs/run_dashboard_ingest.js",
-    "swms:seed-dashboard-sample": "node seed_swms_dashboard_sample.js"
+    "swms:seed-dashboard-sample": "node seed_swms_dashboard_sample.js",
+    "pms:seed-resource-sample": "node seed_pms_resource_sample.js"
   },
   "keywords": [],
   "author": "",

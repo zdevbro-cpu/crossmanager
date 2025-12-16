@@ -1,6 +1,22 @@
 const express = require('express')
 const router = express.Router()
 
+function parseDateOnly(value) {
+    if (!value) return null
+    if (value instanceof Date) return value
+    const s = String(value)
+    // Treat YYYY-MM-DD as date-only (UTC midnight) to avoid timezone drift.
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return new Date(`${s}T00:00:00.000Z`)
+    const d = new Date(s)
+    return Number.isNaN(d.getTime()) ? null : d
+}
+
+function maxAlertDays(alertDays, fallback) {
+    if (!Array.isArray(alertDays) || alertDays.length === 0) return fallback
+    const nums = alertDays.map((n) => Number(n)).filter((n) => Number.isFinite(n))
+    return nums.length ? Math.max(...nums) : fallback
+}
+
 /**
  * Simple merge helper for override patches.
  */
@@ -50,6 +66,68 @@ function applyOverrides(baseRule, overrides) {
 }
 
 module.exports = (pool) => {
+    // GET /api/pms/resource/people
+    router.get('/people', async (req, res) => {
+        try {
+            const { q, status } = req.query
+            const params = []
+            const where = []
+            if (status) {
+                params.push(status)
+                where.push(`status = $${params.length}`)
+            }
+            if (q) {
+                params.push(`%${q}%`)
+                where.push(`(name ILIKE $${params.length} OR contact ILIKE $${params.length})`)
+            }
+
+            const result = await pool.query(
+                `SELECT id, name, birth_yyyymm, contact, status, role_tags, masked_fields, created_at, updated_at
+                 FROM person
+                 ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+                 ORDER BY id DESC
+                 LIMIT 200`,
+                params
+            )
+            res.json(result.rows)
+        } catch (err) {
+            console.error('[PMS] people fetch error', err)
+            res.status(500).json({ error: 'Failed to fetch people' })
+        }
+    })
+
+    // GET /api/pms/resource/certs
+    router.get('/certs', async (req, res) => {
+        try {
+            const result = await pool.query(
+                `SELECT code, name, validity_months, needs_verification, alert_days, active_flag
+                 FROM qualification_cert
+                 WHERE active_flag = true
+                 ORDER BY code`
+            )
+            res.json(result.rows)
+        } catch (err) {
+            console.error('[PMS] certs fetch error', err)
+            res.status(500).json({ error: 'Failed to fetch certs' })
+        }
+    })
+
+    // GET /api/pms/resource/trainings
+    router.get('/trainings', async (req, res) => {
+        try {
+            const result = await pool.query(
+                `SELECT code, name, validity_months, alert_days, active_flag
+                 FROM qualification_training
+                 WHERE active_flag = true
+                 ORDER BY code`
+            )
+            res.json(result.rows)
+        } catch (err) {
+            console.error('[PMS] trainings fetch error', err)
+            res.status(500).json({ error: 'Failed to fetch trainings' })
+        }
+    })
+
     // GET /api/pms/resource/work-types
     router.get('/work-types', async (req, res) => {
         try {
@@ -71,6 +149,7 @@ module.exports = (pool) => {
     router.post('/people', async (req, res) => {
         try {
             const { name, contact, status = 'active', role_tags = [] } = req.body
+            if (!name) return res.status(400).json({ error: 'name is required' })
             const result = await pool.query(
                 `INSERT INTO person (name, contact, status, role_tags)
                  VALUES ($1, $2, $3, $4)
@@ -171,7 +250,7 @@ module.exports = (pool) => {
     router.post('/eligibility/check', async (req, res) => {
         try {
             const { project_id, date, work_type_code, assignees = [] } = req.body
-            const refDate = date ? new Date(date) : new Date()
+            const refDate = parseDateOnly(date) || parseDateOnly(new Date().toISOString().slice(0, 10))
 
             const wtResult = await pool.query(
                 `SELECT code, required_certs_all, required_certs_any,
@@ -194,23 +273,77 @@ module.exports = (pool) => {
                 [work_type_code, project_id]
             )
             const mergedRule = applyOverrides(baseRule, ovResult.rows)
-            const enforcementMode = (mergedRule.enforcement && mergedRule.enforcement.mode) || 'WARN'
+            const enforcementMode = String((mergedRule.enforcement && mergedRule.enforcement.mode) || 'WARN').toUpperCase()
+            const isBlocking = enforcementMode === 'BLOCK'
+
+            if (!Array.isArray(assignees)) return res.status(400).json({ error: 'assignees must be an array' })
+            const assigneeIds = assignees.map((v) => Number(v))
+            if (assigneeIds.some((n) => !Number.isFinite(n))) {
+                return res.status(400).json({ error: 'assignees must be numeric person ids' })
+            }
+
+            const certByPerson = new Map()
+            const trnByPerson = new Map()
+            if (assigneeIds.length > 0) {
+                const [certs, trainings] = await Promise.all([
+                    pool.query(
+                        `SELECT pc.person_id, pc.cert_code, pc.status, pc.expires_at, qc.alert_days
+                         FROM person_cert pc
+                         LEFT JOIN qualification_cert qc ON qc.code = pc.cert_code
+                         WHERE pc.person_id = ANY($1::bigint[])`,
+                        [assigneeIds]
+                    ),
+                    pool.query(
+                        `SELECT pt.person_id, pt.training_code, pt.status, pt.expires_at, qt.alert_days
+                         FROM person_training pt
+                         LEFT JOIN qualification_training qt ON qt.code = pt.training_code
+                         WHERE pt.person_id = ANY($1::bigint[])`,
+                        [assigneeIds]
+                    )
+                ])
+
+                const pickBest = (existing, incoming, ref) => {
+                    if (!existing) return incoming
+                    const rank = (row) => {
+                        const statusRank =
+                            row.status === 'verified' ? 3 : row.status === 'pending' ? 2 : row.status === 'rejected' ? 1 : 0
+                        const exp = parseDateOnly(row.expires_at)
+                        const notExpired = !exp || exp.getTime() >= ref.getTime()
+                        const expScore = exp ? exp.getTime() : Number.MAX_SAFE_INTEGER
+                        return [statusRank, notExpired ? 1 : 0, expScore]
+                    }
+                    const a = rank(existing)
+                    const b = rank(incoming)
+                    for (let i = 0; i < a.length; i += 1) {
+                        if (b[i] > a[i]) return incoming
+                        if (b[i] < a[i]) return existing
+                    }
+                    return existing
+                }
+
+                for (const row of certs.rows) {
+                    const personId = Number(row.person_id)
+                    if (!certByPerson.has(personId)) certByPerson.set(personId, new Map())
+                    const m = certByPerson.get(personId)
+                    const code = row.cert_code
+                    const prev = m.get(code)
+                    m.set(code, pickBest(prev, row, refDate))
+                }
+
+                for (const row of trainings.rows) {
+                    const personId = Number(row.person_id)
+                    if (!trnByPerson.has(personId)) trnByPerson.set(personId, new Map())
+                    const m = trnByPerson.get(personId)
+                    const code = row.training_code
+                    const prev = m.get(code)
+                    m.set(code, pickBest(prev, row, refDate))
+                }
+            }
 
             const assigneeResults = []
-            for (const userId of assignees) {
-                const certs = await pool.query(
-                    `SELECT cert_code, status, expires_at FROM person_cert WHERE person_id = $1`,
-                    [userId]
-                )
-                const trainings = await pool.query(
-                    `SELECT training_code, status, expires_at FROM person_training WHERE person_id = $1`,
-                    [userId]
-                )
-
-                const certMap = new Map()
-                certs.rows.forEach((c) => certMap.set(c.cert_code, c))
-                const trnMap = new Map()
-                trainings.rows.forEach((t) => trnMap.set(t.training_code, t))
+            for (const userId of assigneeIds) {
+                const certMap = certByPerson.get(userId) || new Map()
+                const trnMap = trnByPerson.get(userId) || new Map()
 
                 const missing_certs = []
                 const missing_trainings = []
@@ -220,21 +353,25 @@ module.exports = (pool) => {
                     const row = certMap.get(code)
                     if (!row) { missing_certs.push(code); return }
                     if (row.status !== 'verified') { missing_certs.push(code); return }
-                    if (row.expires_at && new Date(row.expires_at) < refDate) { missing_certs.push(code); return }
+                    const exp = parseDateOnly(row.expires_at)
+                    if (exp && exp.getTime() < refDate.getTime()) { missing_certs.push(code); return }
                     // expiring soon
-                    if (row.expires_at) {
-                        const diff = (new Date(row.expires_at).getTime() - refDate.getTime()) / (1000 * 60 * 60 * 24)
-                        if (diff <= 90) expiring_soon.push(`${code}:D-${Math.max(0, Math.floor(diff))}`)
+                    if (exp) {
+                        const diffDays = Math.floor((exp.getTime() - refDate.getTime()) / (1000 * 60 * 60 * 24))
+                        const threshold = maxAlertDays(row.alert_days, 90)
+                        if (diffDays >= 0 && diffDays <= threshold) expiring_soon.push(`${code}:D-${diffDays}`)
                     }
                 }
                 const checkTraining = (code) => {
                     const row = trnMap.get(code)
                     if (!row) { missing_trainings.push(code); return }
                     if (row.status !== 'verified') { missing_trainings.push(code); return }
-                    if (row.expires_at && new Date(row.expires_at) < refDate) { missing_trainings.push(code); return }
-                    if (row.expires_at) {
-                        const diff = (new Date(row.expires_at).getTime() - refDate.getTime()) / (1000 * 60 * 60 * 24)
-                        if (diff <= 60) expiring_soon.push(`${code}:D-${Math.max(0, Math.floor(diff))}`)
+                    const exp = parseDateOnly(row.expires_at)
+                    if (exp && exp.getTime() < refDate.getTime()) { missing_trainings.push(code); return }
+                    if (exp) {
+                        const diffDays = Math.floor((exp.getTime() - refDate.getTime()) / (1000 * 60 * 60 * 24))
+                        const threshold = maxAlertDays(row.alert_days, 60)
+                        if (diffDays >= 0 && diffDays <= threshold) expiring_soon.push(`${code}:D-${diffDays}`)
                     }
                 }
 
@@ -243,7 +380,8 @@ module.exports = (pool) => {
                 if ((mergedRule.required_certs_any || []).length > 0) {
                     const anyOk = (mergedRule.required_certs_any || []).some((c) => {
                         const row = certMap.get(c)
-                        return row && row.status === 'verified' && (!row.expires_at || new Date(row.expires_at) >= refDate)
+                        const exp = row ? parseDateOnly(row.expires_at) : null
+                        return row && row.status === 'verified' && (!exp || exp.getTime() >= refDate.getTime())
                     })
                     if (!anyOk) missing_certs.push(`any_of:${(mergedRule.required_certs_any || []).join(',')}`)
                 }
@@ -252,25 +390,26 @@ module.exports = (pool) => {
                 if ((mergedRule.required_trainings_any || []).length > 0) {
                     const anyOk = (mergedRule.required_trainings_any || []).some((t) => {
                         const row = trnMap.get(t)
-                        return row && row.status === 'verified' && (!row.expires_at || new Date(row.expires_at) >= refDate)
+                        const exp = row ? parseDateOnly(row.expires_at) : null
+                        return row && row.status === 'verified' && (!exp || exp.getTime() >= refDate.getTime())
                     })
                     if (!anyOk) missing_trainings.push(`any_of:${(mergedRule.required_trainings_any || []).join(',')}`)
                 }
 
-                const eligible = missing_certs.length === 0 && missing_trainings.length === 0
+                const strictEligible = missing_certs.length === 0 && missing_trainings.length === 0
                 assigneeResults.push({
                     user_id: userId,
-                    eligible,
+                    eligible: isBlocking ? strictEligible : true,
                     missing_certs,
                     missing_trainings,
                     expiring_soon
                 })
             }
 
-            const teamEligible = assigneeResults.every((a) => a.eligible)
+            const teamEligible = assigneeResults.every((a) => a.missing_certs.length === 0 && a.missing_trainings.length === 0)
             const response = {
                 work_type_code,
-                eligible: enforcementMode === 'BLOCK' ? teamEligible : teamEligible,
+                eligible: isBlocking ? teamEligible : true,
                 assignee_results: assigneeResults,
                 rule_trace: {
                     base_rule: work_type_code,
