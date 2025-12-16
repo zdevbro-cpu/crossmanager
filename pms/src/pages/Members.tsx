@@ -5,8 +5,10 @@ import { useProjectContext } from '../context/ProjectContext'
 import { mockProjects } from '../data/mock'
 import { useProjectMembers, useRemoveMember, useSetMemberRole, type RoleCode } from '../hooks/useProjectMembers'
 import { useToast } from '../components/ToastProvider'
+import { apiClient } from '../lib/api'
 import { Trash2, Plus, Eye, RotateCcw, CheckCircle, XCircle } from 'lucide-react'
 import ChecklistTemplateManager from '../components/ChecklistTemplateManager'
+import PmsResourceAdmin from '../components/PmsResourceAdmin'
 
 const roles: { code: RoleCode; label: string }[] = [
   { code: 'executive', label: '경영자' },
@@ -45,52 +47,21 @@ function MembersPage() {
 
   const fetchUsers = async () => {
     try {
-      const res = await fetch('http://localhost:3000/api/users')
-      if (res.ok) {
-        setAllUsers(await res.json())
-      }
+      const { data } = await apiClient.get('/users')
+      setAllUsers(data)
     } catch (e) { console.error(e) }
   }
-
-  // Resources State
-  const [resources, setResources] = useState<any[]>([])
-  const fetchResources = async () => {
-    try {
-      const res = await fetch('http://localhost:3000/api/resources')
-      if (res.ok) setResources(await res.json())
-    } catch (e) { console.error(e) }
-  }
-
-  // Resource Form State
-  const [resForm, setResForm] = useState({
-    type: '장비',
-    name: '',
-    projectId: selectedId || 'p1',
-  })
-
-  useEffect(() => {
-    if (selectedId) setResForm((prev) => ({ ...prev, projectId: selectedId }))
-  }, [selectedId])
 
   useEffect(() => {
     fetchUsers()
-    fetchResources()
   }, [])
 
   // Handlers
   const handleApprove = async (uid: string) => {
     try {
-      const res = await fetch('http://localhost:3000/api/users/approve', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uid }), // Role prevents default or current? Logic handles it.
-      })
-      if (res.ok) {
-        show('사용자가 승인되었습니다. (고유코드 생성 완료)', 'success')
-        fetchUsers()
-      } else {
-        show('승인 실패', 'error')
-      }
+      await apiClient.post('/users/approve', { uid }) // Role prevents default or current? Logic handles it.
+      show('사용자가 승인되었습니다. (고유코드 생성 완료)', 'success')
+      fetchUsers()
     } catch (e) {
       console.error(e)
       show('승인 중 오류 발생', 'error')
@@ -99,33 +70,18 @@ function MembersPage() {
 
   const handleRoleChange = async (uid: string, newRole: string) => {
     try {
-      const res = await fetch('http://localhost:3000/api/users/approve', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uid, role: newRole }),
-      })
-      if (res.ok) {
-        show('권한이 변경되었습니다.', 'success')
-        fetchUsers()
-      }
+      await apiClient.post('/users/approve', { uid, role: newRole })
+      show('권한이 변경되었습니다.', 'success')
+      fetchUsers()
     } catch (e) { console.error(e) }
   }
 
   const handleDeleteUser = async (uid: string) => {
     if (!window.confirm('정말 이 사용자를 삭제하시겠습니까?')) return
     try {
-      await fetch(`http://localhost:3000/api/users/${uid}`, { method: 'DELETE' })
+      await apiClient.delete(`/users/${uid}`)
       show('사용자가 삭제되었습니다.', 'success')
       fetchUsers()
-    } catch (e) { console.error(e) }
-  }
-
-  const handleDeleteResource = async (id: string) => {
-    if (!window.confirm('정말 이 자원을 삭제하시겠습니까?')) return
-    try {
-      await fetch(`http://localhost:3000/api/resources/${id}`, { method: 'DELETE' })
-      show('자원이 삭제되었습니다.', 'success')
-      fetchResources()
     } catch (e) { console.error(e) }
   }
 
@@ -143,31 +99,6 @@ function MembersPage() {
     }
   }
 
-  const handleCreateResource = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    if (!resForm.name) {
-      show('자원명을 입력해주세요.', 'warning')
-      return
-    }
-
-    try {
-      const res = await fetch('http://localhost:3000/api/resources', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: crypto.randomUUID(),
-          type: resForm.type,
-          name: resForm.name,
-          projectId: resForm.projectId
-        })
-      })
-      if (res.ok) {
-        show(`[시스템] ${resForm.name} 자원이 등록되었습니다.`, 'success')
-        setResForm((prev) => ({ ...prev, name: '' }))
-        fetchResources()
-      }
-    } catch (e) { console.error(e) }
-  }
 
   const formatPhoneNumber = (value: string) => {
     if (!value) return '-'
@@ -184,7 +115,7 @@ function MembersPage() {
         <div>
           <p className="eyebrow">시스템관리</p>
           <h2>통합 관리 시스템</h2>
-          <p className="muted">직원 및 자원(장비/인력)을 통합 관리합니다.</p>
+          <p className="muted">직원 권한 및 자격/투입가능(Eligibility)을 관리합니다.</p>
         </div>
         <div className="pill pill-outline">System Admin</div>
       </header>
@@ -217,7 +148,7 @@ function MembersPage() {
             cursor: 'pointer'
           }}
         >
-          자원(장비/인력) 관리
+          자원관리(자격/투입가능)
         </button>
         <button
           onClick={() => setActiveTab('templates')}
@@ -385,74 +316,7 @@ function MembersPage() {
 
       {/* Tab Content: Resources */}
       {activeTab === 'resources' && (
-        <>
-          <section className="card">
-            <p className="card-label">신규 자원 등록(마스터)</p>
-            <form className="form-grid" onSubmit={handleCreateResource}>
-              <label>
-                <span>유형</span>
-                <select className="input-std" value={resForm.type} onChange={(e) => setResForm({ ...resForm, type: e.target.value })}>
-                  <option value="장비">장비</option>
-                  <option value="인력">인력</option>
-                </select>
-              </label>
-              <label>
-                <span>자원명</span>
-                <input className="input-std" value={resForm.name} onChange={(e) => setResForm({ ...resForm, name: e.target.value })} placeholder="예: 포크레인 1호기" />
-              </label>
-              <label>
-                <span>소속 프로젝트</span>
-                <select
-                  className="input-std"
-                  value={resForm.projectId}
-                  onChange={(e) => setResForm({ ...resForm, projectId: e.target.value })}
-                >
-                  {mockProjects.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="form-actions">
-                <button type="submit" className="icon-button" aria-label="자원 추가">
-                  <Plus size={18} />
-                </button>
-              </div>
-            </form>
-            <p className="muted">등록된 자원은 '자원' 메뉴에서 작업에 배정할 수 있습니다.</p>
-          </section>
-
-          <section className="card table-card" style={{ marginTop: '1.5rem' }}>
-            <div className="table-head">
-              <p className="card-label">보유 자원 목록</p>
-            </div>
-            <div className="table">
-              <div className="table-row table-header">
-                <span>유형</span>
-                <span>자원명</span>
-                <span>소속</span>
-                <span>관리</span>
-              </div>
-              {resources.length === 0 ? (
-                <div style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>등록된 자원이 없습니다.</div>
-              ) : (
-                resources.map(r => (
-                  <div key={r.id} className="table-row">
-                    <span>{r.type}</span>
-                    <span style={{ fontWeight: 500 }}>{r.name}</span>
-                    <span>{mockProjects.find(p => p.id === r.project_id)?.name || '공통'}</span>
-                    <span className="row-actions">
-                      <button className="icon-button" onClick={() => handleDeleteResource(r.id)} title="삭제">
-                        <Trash2 size={18} />
-                      </button>
-                    </span>
-                  </div>
-                ))
-              )}
-            </div>
-          </section>
-        </>
+        <PmsResourceAdmin projectId={assignProjectId} />
       )}
 
       {/* Tab Content: Checklist Templates */}
