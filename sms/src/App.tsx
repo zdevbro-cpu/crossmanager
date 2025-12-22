@@ -11,6 +11,7 @@ import DashboardPage from './pages/Dashboard'
 import RiskAssessmentPage from './pages/RiskAssessment'
 import RiskAssessmentFormPage from './pages/RiskAssessmentForm'
 import RiskAssessmentDetailPage from './pages/RiskAssessmentDetail'
+import RiskAssessmentEditor from './pages/RiskAssessmentEditor'
 import DriPage from './pages/Dri'
 import ChecklistPage from './pages/ChecklistPage'
 import PatrolPage from './pages/Patrol'
@@ -164,6 +165,14 @@ function AppShell() {
               element={
                 <RequireAuth>
                   <RiskAssessmentDetailPage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/ra/form-editor"
+              element={
+                <RequireAuth>
+                  <RiskAssessmentEditor />
                 </RequireAuth>
               }
             />

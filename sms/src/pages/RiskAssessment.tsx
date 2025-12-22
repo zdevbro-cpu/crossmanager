@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react'
-import { Plus, FileText, CheckCircle, AlertTriangle, Search } from 'lucide-react'
+import { Plus, FileText, CheckCircle, AlertTriangle, Search, FileSpreadsheet } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import './Page.css'
 import { apiClient } from '../lib/api'
@@ -63,10 +63,16 @@ function RiskAssessmentPage() {
             현장 공정별 위험요소를 식별하고 감소 대책을 수립합니다.
           </p>
         </div>
-        <button className="btn-primary" onClick={() => navigate('/ra/new')}>
-          <Plus size={18} />
-          평가 생성
-        </button>
+        <div style={{ display: 'flex', gap: '0.75rem' }}>
+          <button className="btn-secondary" onClick={() => navigate('/ra/form-editor')}>
+            <FileSpreadsheet size={18} />
+            위험성평가표작성
+          </button>
+          <button className="btn-primary" onClick={() => navigate('/ra/new')}>
+            <Plus size={18} />
+            평가작성
+          </button>
+        </div>
       </header>
 
       {/* Search Toolbar */}

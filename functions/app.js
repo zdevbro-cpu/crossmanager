@@ -402,6 +402,13 @@ app.get(['/api/docview/versions/:versionId/:filename', '/api/docview/versions/:v
 const documentsRouter = createDocumentsRouter(pool, uploadsDir)
 app.use('/api/documents', documentsRouter)
 
+// SMS Standards API
+try {
+    app.use('/api/sms', require('./routes/sms_standards')(pool))
+} catch (e) {
+    console.warn('[App] Failed to load SMS Standards route:', e.message)
+}
+
 app.use(express.json({ limit: '50mb' }))
 app.use(express.urlencoded({ extended: true, limit: '50mb' }))
 // Serve uploaded files statically

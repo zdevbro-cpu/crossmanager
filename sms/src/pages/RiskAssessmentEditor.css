@@ -1,0 +1,177 @@
+/* Scoped styles for Risk Table */
+
+:root {
+  /* Local mapping to global vars for easier migration from rilkass */
+  --risk-high: #ef4444;
+  --risk-med: #f59e0b;
+  --risk-low: #10b981;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #475569;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* Split Table Structure */
+.risk-table-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background-color: var(--bg-surface);
+}
+
+.risk-table-header-wrapper {
+  background-color: #1e293b;
+  border-bottom: 1px solid var(--border);
+  /* Compensate for scrollbar in body */
+  padding-right: 8px;
+}
+
+.risk-table-body-wrapper {
+  overflow-y: scroll;
+  max-height: 70vh;
+  background-color: var(--bg-surface);
+}
+
+.risk-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+/* Header Cells */
+.risk-table th {
+  text-align: center;
+  height: 48px;
+  padding: 0 0.5rem;
+  background-color: #1e293b;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+/* Data Cells */
+.risk-table td {
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  vertical-align: middle;
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
+.risk-table tr:hover td {
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+/* Inputs / Selects / Textareas */
+.risk-table input,
+.risk-table textarea,
+.risk-table select {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-primary);
+  width: 100%;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  transition: all 0.2s;
+}
+
+.risk-table textarea {
+  min-height: 2.5em;
+  resize: none;
+}
+
+.risk-table input:focus,
+.risk-table textarea:focus,
+.risk-table select:focus {
+  outline: none;
+  border-color: var(--primary);
+  background-color: rgba(15, 23, 42, 0.5);
+}
+
+/* Badges */
+.risk-table select.badge-high {
+  color: var(--risk-high);
+  border: 1px solid var(--risk-high);
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.risk-table select.badge-med {
+  color: var(--risk-med);
+  border: 1px solid var(--risk-med);
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.risk-table select.badge-low {
+  color: var(--risk-low);
+  border: 1px solid var(--risk-low);
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.risk-table select.measure-guideline {
+  color: #10b981;
+  border: 1px solid #10b981;
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.risk-table select.measure-accident {
+  color: #ef4444;
+  border: 1px solid #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.risk-table select.measure-hp {
+  color: #3b82f6;
+  border: 1px solid #3b82f6;
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.risk-table select option {
+  background-color: #0f172a;
+  color: var(--text-primary);
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.text-center {
+  text-align: center;
+}
+
+.text-sub {
+  color: var(--text-secondary);
+}

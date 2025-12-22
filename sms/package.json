@@ -17,18 +17,21 @@
     "firebase": "^12.6.0",
     "html5-qrcode": "^2.3.8",
     "lucide-react": "^0.556.0",
+    "papaparse": "^5.5.3",
     "pdfjs-dist": "^5.4.449",
     "qrcode.react": "^4.2.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-hook-form": "^7.68.0",
     "react-pdf": "^10.2.0",
-    "react-router-dom": "^7.10.1"
+    "react-router-dom": "^7.10.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
     "@playwright/test": "^1.57.0",
     "@types/node": "^24.10.1",
+    "@types/papaparse": "^5.5.2",
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
