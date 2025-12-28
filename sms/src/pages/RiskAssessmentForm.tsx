@@ -53,7 +53,7 @@ export default function RiskAssessmentFormPage() {
         try {
             await apiClient.post('/sms/risk-assessments', data)
             showToast('위험성 평가가 성공적으로 저장되었습니다.', 'success')
-            navigate('/ra')
+            navigate('/sms/ra')
         } catch (err: any) {
             console.error(err)
             showToast('저장 중 오류가 발생했습니다.', 'error')
@@ -72,7 +72,7 @@ export default function RiskAssessmentFormPage() {
         <div className="page">
             <header className="page-header">
                 <div>
-                    <button className="btn-text" onClick={() => navigate('/ra')}>
+                    <button className="btn-text" onClick={() => navigate('/sms/ra')}>
                         <ArrowLeft size={16} /> 목록으로 돌아가기
                     </button>
                     <h1 style={{ marginTop: '0.5rem' }}>위험성 평가 작성</h1>

@@ -1,4 +1,4 @@
-import './Page.css'
+ï»¿import './Page.css'
 import { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
@@ -13,31 +13,26 @@ function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
-  const from = (location.state as { from?: string } | undefined)?.from || '/overview'
+  void location
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!email || !password) {
-      show('?´ë©”??ë¹„ë?ë²ˆí˜¸ë¥??…ë ¥?˜ì„¸??', 'warning')
+      show('Please enter email and password.', 'warning')
       return
     }
     setLoading(true)
     try {
-      // 1. Firebase Login
       if (!firebaseReady) {
         show('Firebase env missing. Using local login fallback.', 'warning')
       }
       await signIn(email, password)
-
-      // 2. Check Backend Status
-      // 2. Check Backend Status skipped
-      // if (auth && auth.currentUser) { ... }
-
-      show('ë¡œê·¸???±ê³µ', 'success')
-      navigate(from, { replace: true })
-    } catch (err: any) {
+      show('Login successful.', 'success')
+      const baseUrl = import.meta.env.BASE_URL || '/pms/'
+      window.location.assign(`${baseUrl}overview`)
+    } catch (err) {
       console.error(err)
-      show('ë¡œê·¸???¤íŒ¨: ?´ë©”??ë¹„ë²ˆ ?ëŠ” ?¹ì¸ ?íƒœë¥??•ì¸?˜ì„¸??', 'error')
+      show('Login failed. Check your account or env settings.', 'error')
     } finally {
       setLoading(false)
     }
@@ -46,12 +41,12 @@ function LoginPage() {
   return (
     <div className="center-page">
       <div className="auth-card">
-        <h2>ì§ì› ë¡œê·¸??/h2>
-        <p className="muted">?¹ì¸???´ë©”??ê³„ì •?¼ë¡œ ?‘ì†?´ì£¼?¸ìš”.</p>
+        <h2>PMS Login</h2>
+        <p className="muted">Sign in to continue.</p>
 
         <form onSubmit={handleSubmit} className="auth-form">
           <label>
-            <span>?´ë©”??/span>
+            <span>Email</span>
             <input
               type="email"
               value={email}
@@ -59,7 +54,7 @@ function LoginPage() {
             />
           </label>
           <label>
-            <span>ë¹„ë?ë²ˆí˜¸</span>
+            <span>Password</span>
             <input
               type="password"
               value={password}
@@ -67,12 +62,15 @@ function LoginPage() {
             />
           </label>
           <button type="submit" className="btn-primary" disabled={loading}>
-            {loading ? '?•ì¸ ì¤?..' : 'ë¡œê·¸??}
+            {loading ? 'Signing in...' : 'Login'}
           </button>
         </form>
 
         <div className="auth-footer">
-          <p>ê³„ì •???†ìœ¼? ê??? <a onClick={() => navigate('/signup')}>ì§ì› ?±ë¡(ê°€?…ìš”ì²?</a></p>
+          <p>
+            No account?{' '}
+            <a onClick={() => navigate('/signup')}>Create one</a>
+          </p>
         </div>
       </div>
     </div>
@@ -80,11 +78,3 @@ function LoginPage() {
 }
 
 export default LoginPage
-
-
-
-
-
-
-
-

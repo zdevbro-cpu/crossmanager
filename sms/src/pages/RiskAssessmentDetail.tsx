@@ -40,7 +40,7 @@ export default function RiskAssessmentDetailPage() {
         <div className="page">
             <header className="page-header">
                 <div>
-                    <button className="btn-text" onClick={() => navigate('/ra')}>
+                    <button className="btn-text" onClick={() => navigate('/sms/ra')}>
                         <ArrowLeft size={16} /> 목록으로
                     </button>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginTop: '0.5rem' }}>

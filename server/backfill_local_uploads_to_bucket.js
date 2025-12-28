@@ -1,18 +1,18 @@
 /**
  * Backfill "local-only" document files to Firebase Storage so deployed server can access them.
  *
- * 대상:
- * - document_versions.file_path 가 "documents/..." 가 아닌 단순 파일명(로컬 디스크 저장 케이스)
- * - document_versions.file_content 가 비어있거나 NULL 인 케이스
- * - Server/uploads/<file_path> 파일이 실제로 존재하는 케이스
+ * ?�??
+ * - document_versions.file_path 가 "documents/..." 가 ?�닌 ?�순 ?�일�?로컬 ?�스???�??케?�스)
+ * - document_versions.file_content 가 비어?�거??NULL ??케?�스
+ * - Server/uploads/<file_path> ?�일???�제�?존재?�는 케?�스
  *
- * 동작:
- * - uploadsDir 에서 파일을 읽어 버킷 documents/<project_id|global>/<filename> 로 업로드
- * - document_versions.file_path 를 해당 destination 으로 업데이트
+ * ?�작:
+ * - uploadsDir ?�서 ?�일???�어 버킷 documents/<project_id|global>/<filename> �??�로??
+ * - document_versions.file_path �??�당 destination ?�로 ?�데?�트
  *
- * 안전장치:
- * - 기본은 DRY RUN 입니다.
- * - 실제 반영은 `RUN=1` 환경변수로만 동작합니다.
+ * ?�전?�치:
+ * - 기본?� DRY RUN ?�니??
+ * - ?�제 반영?� `RUN=1` ?�경변?�로�??�작?�니??
  */
 
 const path = require('path')
@@ -36,7 +36,7 @@ function resolveBucketName() {
       }
     }
   } catch (e) { }
-  return 'crossmanager-1e21c.appspot.com'
+  return 'crossmanager-482403.appspot.com'
 }
 
 function initAdmin() {
@@ -134,4 +134,5 @@ main().catch((e) => {
   console.error('[Backfill] failed:', e)
   process.exitCode = 1
 })
+
 

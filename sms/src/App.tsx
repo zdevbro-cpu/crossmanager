@@ -21,14 +21,14 @@ import ReportsPage from './pages/Reports'
 import LoginPage from './pages/Login'
 
 const navItems = [
-  { path: '/dashboard', label: '현장 대시보드' },
-  { path: '/ra', label: '위험성평가(RA)' },
-  { path: '/dri', label: 'DRI(일일 위험예지)' },
-  { path: '/checklist', label: '체크리스트' },
-  { path: '/patrol', label: '패트롤' },
-  { path: '/education', label: '교육/자격' },
-  { path: '/incidents', label: '사고/아차사고' },
-  { path: '/reports', label: '보고·문서' },
+  { path: '/sms/dashboard', label: '현장 대시보드' },
+  { path: '/sms/ra', label: '위험성평가(RA)' },
+  { path: '/sms/dri', label: 'DRI(일일 위험예지)' },
+  { path: '/sms/checklist', label: '체크리스트' },
+  { path: '/sms/patrol', label: '패트롤' },
+  { path: '/sms/education', label: '교육/자격' },
+  { path: '/sms/incidents', label: '사고/아차사고' },
+  { path: '/sms/reports', label: '보고·문서' },
 ]
 
 function getPortalHomeUrl() {
@@ -135,9 +135,9 @@ function AppShell() {
 
         <main className="content">
           <Routes>
-            <Route path="/login" element={<LoginPage />} />
+            <Route path="/sms/login" element={<LoginPage />} />
             <Route
-              path="/dashboard"
+              path="/sms/dashboard"
               element={
                 <RequireAuth>
                   <DashboardPage />
@@ -145,7 +145,7 @@ function AppShell() {
               }
             />
             <Route
-              path="/ra"
+              path="/sms/ra"
               element={
                 <RequireAuth>
                   <RiskAssessmentPage />
@@ -153,7 +153,7 @@ function AppShell() {
               }
             />
             <Route
-              path="/ra/new"
+              path="/sms/ra/new"
               element={
                 <RequireAuth>
                   <RiskAssessmentFormPage />
@@ -161,7 +161,7 @@ function AppShell() {
               }
             />
             <Route
-              path="/ra/:id"
+              path="/sms/ra/:id"
               element={
                 <RequireAuth>
                   <RiskAssessmentDetailPage />
@@ -169,7 +169,7 @@ function AppShell() {
               }
             />
             <Route
-              path="/ra/form-editor"
+              path="/sms/ra/form-editor"
               element={
                 <RequireAuth>
                   <RiskAssessmentEditor />
@@ -177,7 +177,7 @@ function AppShell() {
               }
             />
             <Route
-              path="/dri"
+              path="/sms/dri"
               element={
                 <RequireAuth>
                   <DriPage />
@@ -185,7 +185,7 @@ function AppShell() {
               }
             />
             <Route
-              path="/checklist"
+              path="/sms/checklist"
               element={
                 <RequireAuth>
                   <ChecklistPage />
@@ -193,7 +193,7 @@ function AppShell() {
               }
             />
             <Route
-              path="/patrol"
+              path="/sms/patrol"
               element={
                 <RequireAuth>
                   <PatrolPage />
@@ -201,7 +201,7 @@ function AppShell() {
               }
             />
             <Route
-              path="/education"
+              path="/sms/education"
               element={
                 <RequireAuth>
                   <EducationPage />
@@ -209,7 +209,7 @@ function AppShell() {
               }
             />
             <Route
-              path="/incidents"
+              path="/sms/incidents"
               element={
                 <RequireAuth>
                   <IncidentPage />
@@ -217,14 +217,17 @@ function AppShell() {
               }
             />
             <Route
-              path="/reports"
+              path="/sms/reports"
               element={
                 <RequireAuth>
                   <ReportsPage />
                 </RequireAuth>
               }
             />
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            {/* Catch-all for /sms root to dashboard */}
+            <Route path="/sms" element={<Navigate to="/sms/dashboard" replace />} />
+            {/* General Fallback */}
+            <Route path="*" element={<Navigate to="/sms/dashboard" replace />} />
           </Routes>
         </main>
         <ToastViewport />

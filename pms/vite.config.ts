@@ -9,7 +9,7 @@ export default defineConfig(({ mode }) => {
   // - 로컬 서버: http://localhost:3007
   // - 배포 서버: https://crossmanager.web.app  (권장: same hosting rewrite)
   // 기본값을 배포로 두면, 로컬에서 업로드한 파일도 배포(=버킷) 기준으로 확인 가능
-  const apiProxyTarget = env.VITE_API_PROXY_TARGET || 'https://crossmanager.web.app'
+  const apiProxyTarget = env.VITE_API_PROXY_TARGET || 'https://crossmanagern.web.app'
 
   return {
     base: '/pms/',

@@ -13,6 +13,7 @@ function RiskAssessmentPage() {
   const [assessments, setAssessments] = useState<RiskAssessment[]>([])
   const [projects, setProjects] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
 
   useEffect(() => {
@@ -27,6 +28,7 @@ function RiskAssessmentPage() {
       const { data } = await apiClient.get<RiskAssessment[]>('/sms/risk-assessments')
       setAssessments(data)
     } catch (err) {
+      setLoadError(true)
       console.error(err)
     }
   }
@@ -36,6 +38,7 @@ function RiskAssessmentPage() {
       const { data } = await apiClient.get('/projects')
       setProjects(data)
     } catch (err) {
+      setLoadError(true)
       console.error(err)
     }
   }
@@ -64,16 +67,23 @@ function RiskAssessmentPage() {
           </p>
         </div>
         <div style={{ display: 'flex', gap: '0.75rem' }}>
-          <button className="btn-secondary" onClick={() => navigate('/ra/form-editor')}>
+          <button className="btn-secondary" onClick={() => navigate('/sms/ra/form-editor')}>
             <FileSpreadsheet size={18} />
             위험성평가표작성
           </button>
-          <button className="btn-primary" onClick={() => navigate('/ra/new')}>
+          <button className="btn-primary" onClick={() => navigate('/sms/ra/new')}>
             <Plus size={18} />
             평가작성
           </button>
         </div>
       </header>
+
+      {loadError && (
+        <section className="panel" style={{ marginBottom: '1rem', border: '1px solid rgba(255, 176, 0, 0.5)' }} role="alert">
+          <strong style={{ display: 'block', marginBottom: '0.25rem' }}>Offline mode</strong>
+          <span className="muted">Data could not be loaded. The page remains available with empty results.</span>
+        </section>
+      )}
 
       {/* Search Toolbar */}
       <section className="panel" style={{ padding: '1rem', marginBottom: '1.5rem' }}>
@@ -101,7 +111,7 @@ function RiskAssessmentPage() {
           {filteredAssessments.map((ra) => {
             const project = projects.find(p => p.id === ra.project_id)
             return (
-              <div key={ra.id} className="ra-card" onClick={() => navigate(`/ra/${ra.id}`)}>
+              <div key={ra.id} className="ra-card" onClick={() => navigate(`/sms/ra/${ra.id}`)}>
                 <div style={{ marginBottom: '0.75rem' }}>
                   <span className="task-id" style={{ display: 'block', marginBottom: '0.25rem' }}>
                     {project ? project.name : '미지정 현장'}

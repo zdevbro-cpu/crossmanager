@@ -30,7 +30,7 @@
   - `POST /:id/versions`: 동일 로직으로 버전 파일 처리.
 - **환경 설정:**
   - CORS: `app.use(cors({ origin: true }))` 적용.
-  - Storage Bucket: `crossmanager-1e21c.appspot.com` (환경변수 또는 하드코딩).
+  - Storage Bucket: `crossmanager-482403.appspot.com` (환경변수 또는 하드코딩).
 
 ## 4. 프런트 구현 (`pms/src/pages/Documents.tsx`)
 - **업로드 로직 변경:**
@@ -49,7 +49,7 @@
   - 조치: 프론트엔드 `fetch` 전환, 백엔드 `Busboy` 도입.
 - **[해결] Storage Bucket Not Found:**
   - 원인: Admin SDK 초기화 시 버킷명 미지정.
-  - 조치: 명시적 버킷명(`crossmanager-1e21c.appspot.com`) 설정.
+  - 조치: 명시적 버킷명(`crossmanager-482403.appspot.com`) 설정.
 - **[이슈] 클라우드 환경에서 파일 소실 (휘발성 저장소):**
   - 증상: 배포 시 로컬 `uploads/` 폴더 초기화로 파일 유실.
   - 1차 조치: DB(Base64) 임시 저장 (비용 이슈 존재).

@@ -108,15 +108,7 @@ const RiskTable: React.FC<RiskTableProps> = ({
     // Column Definitions Helpers
     const RiskColGroup = () => (
         <colgroup>
-            <col style={{ width: '50px' }} /> {/* No */}
-            <col style={{ width: '150px' }} /> {/* Step */}
-            <col style={{ width: '120px' }} /> {/* Factor Type */}
-            <col style={{ width: '120px' }} /> {/* Factor Class */}
-            <col style={{ width: '80px' }} /> {/* Risk Level */}
-            <col style={{ width: '80px' }} /> {/* Measure Type */}
-            <col style={{ width: 'auto' }} /> {/* Measure Detail */}
-            <col style={{ width: '80px' }} /> {/* Residual Risk */}
-            <col style={{ width: '50px' }} /> {/* Delete/Select */}
+            <col style={{ width: '50px' }} /><col style={{ width: '150px' }} /><col style={{ width: '120px' }} /><col style={{ width: '120px' }} /><col style={{ width: '80px' }} /><col style={{ width: '80px' }} /><col style={{ width: 'auto' }} /><col style={{ width: '80px' }} /><col style={{ width: '50px' }} />
         </colgroup>
     );
 

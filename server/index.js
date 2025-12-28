@@ -1,15 +1,25 @@
-ï»¿
+
 
 const express = require('express')
 const cors = require('cors')
 const multer = require('multer')
 const path = require('path')
 const fs = require('fs')
-require('dotenv').config({ path: path.join(__dirname, '.env') })
+
+// Priority Load: Customer Env -> Default Env
+const customerEnvPath = path.join(__dirname, 'env_customer.env')
+if (fs.existsSync(customerEnvPath)) {
+    require('dotenv').config({ path: customerEnvPath })
+    console.log('[Config] Loaded env_customer.env')
+} else {
+    require('dotenv').config({ path: path.join(__dirname, '.env') })
+    console.log('[Config] Loaded default .env')
+}
+
 const { Pool } = require('pg')
 
 const app = express()
-const PORT = 3007
+const PORT = process.env.PORT || 3000
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(__dirname, 'uploads')
@@ -88,7 +98,11 @@ if (preferSocket && process.env.DB_HOST && process.env.DB_HOST.startsWith('/clou
     console.log('[DB] Using Cloud SQL Socket:', dbConfig.host)
 } else {
     // Local / TCP
-    dbConfig.ssl = { rejectUnauthorized: false }
+    const tcpHost = String(dbConfig.host || '').toLowerCase()
+    const isLocalProxy = tcpHost === '127.0.0.1' || tcpHost === 'localhost'
+    if (!isLocalProxy) {
+        dbConfig.ssl = { rejectUnauthorized: false }
+    }
     console.log('[DB] Using TCP Connection:', dbConfig.host, dbConfig.port)
 }
 
@@ -117,7 +131,7 @@ function resolveBucketName() {
         }
     } catch (e) { }
 
-    return 'crossmanager-1e21c.appspot.com'
+    return 'crossmanager-482403.appspot.com'
 }
 
 // Ensure schema exists for older/local DBs (prevents docview failures when running from different environments)
@@ -242,7 +256,7 @@ app.get(['/api/docview/:id/:filename', '/api/docview/:id'], async (req, res) => 
         else if (ext === '.jpg' || ext === '.jpeg') mimeType = 'image/jpeg'
 
         // Safe filename for header
-        let safeName = docName.replace(/[^a-zA-Z0-9ê°€-íž£\s\-_.]/g, '').trim()
+        let safeName = docName.replace(/[^a-zA-Z0-9°¡-ÆR\s\-_.]/g, '').trim()
         if (!safeName) safeName = 'document'
         const downloadFilename = `${safeName}${ext}`
         const encodedName = encodeURIComponent(downloadFilename)
@@ -363,7 +377,7 @@ app.get(['/api/docview/versions/:versionId/:filename', '/api/docview/versions/:v
         else if (ext === '.png') mimeType = 'image/png'
         else if (ext === '.jpg' || ext === '.jpeg') mimeType = 'image/jpeg'
 
-        let safeName = docName.replace(/[^a-zA-Z0-9ê°€-íž£\s\-_.]/g, '').trim()
+        let safeName = docName.replace(/[^a-zA-Z0-9°¡-ÆR\s\-_.]/g, '').trim()
         if (!safeName) safeName = 'document'
         const requestedFilename = req.params.filename ? decodeURIComponent(req.params.filename) : null
         const defaultFilename = `${safeName}_${version}${ext}`
@@ -448,7 +462,7 @@ async function applyInventoryDelta(client, projectId, warehouseId, lines, multip
                 lot_no,
                 delta,
                 null,
-                unit || 'í†¤',
+                unit || 'Åæ',
                 !!hazardous,
                 todayStr(),
                 todayStr()
@@ -510,7 +524,7 @@ pool.connect((err) => {
                 specifications VARCHAR(255),
                 serial_number VARCHAR(255),
                 acquisition_date DATE,
-                equipment_status VARCHAR(50) DEFAULT 'ê°€í’ˆ',
+                equipment_status VARCHAR(50) DEFAULT '°¡Ç°',
                 purchase_type VARCHAR(50),
                 purchase_amount DECIMAL(15,2),
                 residual_value DECIMAL(15,2),
@@ -724,10 +738,10 @@ pool.connect((err) => {
                         project_id UUID,
                         name VARCHAR(100) NOT NULL,
                         birth_date VARCHAR(20),
-                        job_type VARCHAR(50), -- ì§ì¢… (ëª©ìˆ˜, ì² ê·¼ ??
+                        job_type VARCHAR(50), -- Á÷Á¾ (¸ñ¼ö, Ã¶±Ù ??
                         blood_type VARCHAR(10),
                         phone VARCHAR(20),
-                        agency VARCHAR(100), -- ?ï¿½ì† ?ï¿½ì²´
+                        agency VARCHAR(100), -- ??¼Ó ??Ã¼
                         qr_code_data TEXT, -- QR Code String
                         photo_url TEXT,
                         status VARCHAR(20) DEFAULT 'ACTIVE',
@@ -740,15 +754,15 @@ pool.connect((err) => {
                     CREATE TABLE IF NOT EXISTS sms_incidents (
                         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                         project_id UUID,
-                        type VARCHAR(50), -- ?ï¿½ê³ , ?ï¿½ì°¨?ï¿½ê³ 
+                        type VARCHAR(50), -- ??°í, ??Â÷??°í
                         title VARCHAR(255) NOT NULL,
                         date DATE DEFAULT CURRENT_DATE,
-                        time VARCHAR(50), -- ë°œìƒ ?ï¿½ê°„
+                        time VARCHAR(50), -- ¹ß»ý ??°£
                         place VARCHAR(100),
                         description TEXT,
-                        cause TEXT, -- ?ï¿½ì¸
-                        measure TEXT, -- ì¡°ì¹˜ ?ï¿½í•­
-                        reporter VARCHAR(100), -- ë³´ê³ ??
+                        cause TEXT, -- ??ÀÎ
+                        measure TEXT, -- Á¶Ä¡ ??Ç×
+                        reporter VARCHAR(100), -- º¸°í??
                         status VARCHAR(50) DEFAULT 'REPORTED', -- REPORTED, INVESTIGATING, CLOSED
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
@@ -769,7 +783,7 @@ pool.connect((err) => {
                     CREATE TABLE IF NOT EXISTS sms_documents (
                         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                         project_id UUID,
-                        category VARCHAR(50), -- ?ï¿½ì „ê´€ë¦¬ë¹„, ì£¼ê°„ë³´ê³ , ?ï¿½ê°„ë³´ê³ , ê²€?ï¿½ë³´ï¿½? ê¸°ï¿½?
+                        category VARCHAR(50), -- ??Àü°ü¸®ºñ, ÁÖ°£º¸°í, ??°£º¸°í, °Ë??º¸?? ±â??
                         title VARCHAR(255) NOT NULL,
                         description TEXT,
                         file_url TEXT,
@@ -787,7 +801,7 @@ pool.connect((err) => {
                         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                         document_id UUID REFERENCES sms_documents(id) ON DELETE CASCADE,
                         commenter_name VARCHAR(100),
-                        commenter_role VARCHAR(50), -- PM, ê²½ì˜??
+                        commenter_role VARCHAR(50), -- PM, °æ¿µ??
                         comment TEXT NOT NULL,
                         status VARCHAR(50) DEFAULT 'PENDING', -- PENDING, RESOLVED
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -867,7 +881,7 @@ app.post('/api/sms/checklists', async (req, res) => {
         const query = `
             INSERT INTO sms_checklists (
                 project_id, template_id, title, results, created_by, created_at
-            ) VALUES ($1, $2, $3, $4, '?ï¿½ì „ê´€ë¦¬ìž', NOW())
+            ) VALUES ($1, $2, $3, $4, '??Àü°ü¸®ÀÚ', NOW())
             RETURNING *
         `
         const { rows } = await pool.query(query, [projectId, templateId, title, JSON.stringify(results)])
@@ -1456,7 +1470,7 @@ app.post('/api/equipment/:id/upload', upload.single('file'), async (req, res) =>
             type: req.file.mimetype,
             size: req.file.size,
             uploadDate: new Date().toISOString(),
-            category: category || 'ê¸°ï¿½?',
+            category: category || '±â??',
             path: req.file.filename, // Store filename, not full path
             url: `/uploads/${req.file.filename}` // URL for accessing the file
         }
@@ -1857,7 +1871,7 @@ app.post('/api/sms/risk-assessments', async (req, res) => {
                 `, [
                     raId,
                     item.riskFactor,
-                    item.riskType || 'ê¸°ï¿½?',
+                    item.riskType || '±â??',
                     item.frequency || 1,
                     item.severity || 1,
                     item.mitigationMeasure || '',
@@ -1969,7 +1983,7 @@ app.post('/api/sms/patrols', async (req, res) => {
             INSERT INTO sms_patrols (
                 project_id, location, issue_type, severity, description, 
                 action_required, status, created_by, created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, 'OPEN', '?ï¿½ì „ê´€ë¦¬ìž', NOW())
+            ) VALUES ($1, $2, $3, $4, $5, $6, 'OPEN', '??Àü°ü¸®ÀÚ', NOW())
             RETURNING *
         `
 
@@ -2170,7 +2184,7 @@ app.post('/api/sms/incidents', async (req, res) => {
             const insertRes = await client.query(`
                 INSERT INTO sms_incidents (
                     project_id, type, title, date, time, place, description, reporter
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'ê´€ë¦¬ìž')
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, '°ü¸®ÀÚ')
                 RETURNING id
             `, [projectId, type, title, date, time, place, description])
 
@@ -2433,3 +2447,4 @@ app.listen(PORT, () => {
 
 
 module.exports = app
+

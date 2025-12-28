@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import RiskTable from '../components/RiskTable';
 import type { RiskAssessmentProject, RiskItem } from '../types/riskass';
-import { BookOpen, FileSpreadsheet, Plus, ArrowLeft } from 'lucide-react';
+import { BookOpen, FileSpreadsheet, Plus, ArrowLeft, Trash2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import './RiskAssessmentEditor.css';
 
@@ -154,6 +154,33 @@ function RiskAssessmentEditor() {
         } catch (err) {
             console.error(err);
             alert('학습 중 오류가 발생했습니다.');
+        }
+    };
+
+    const handleDeleteStandard = async () => {
+        const typeToDelete = project.construction_type;
+        if (!typeToDelete) return;
+
+        if (!confirm(`[관리자 기능] '${typeToDelete}' 공종의 모든 표준 DB 데이터를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) return;
+
+        try {
+            const res = await fetch(`${API_BASE}/risk-standards?construction_type=${encodeURIComponent(typeToDelete)}`, {
+                method: 'DELETE'
+            });
+            if (!res.ok) throw new Error('Failed to delete');
+            const data = await res.json();
+            const deletedCount = typeof data.deleted === 'number'
+                ? data.deleted
+                : (typeof data.deletedCount === 'number' ? data.deletedCount : 0);
+
+            alert(`${typeToDelete} ${deletedCount}건 삭제되었습니다.`);
+
+            setProject(prev => ({ ...prev, items: [] }));
+            setAvailableTypes(prev => prev.filter(t => t !== typeToDelete));
+            fetchTypes();
+        } catch (err) {
+            console.error(err);
+            alert('삭제 중 오류가 발생했습니다.');
         }
     };
 
@@ -345,10 +372,10 @@ function RiskAssessmentEditor() {
             {/* Show Filters & Construction Type ONLY in List Mode */}
             {viewMode === 'list' && (
                 <div className="panel" style={{ marginBottom: '0.5rem' }}>
-                    <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', gap: '4rem', flexWrap: 'wrap', columnGap: '4rem' }}>
                         {/* Search Filters */}
-                        <div className="form-group" style={{ flex: 2, minWidth: '300px' }}>
-                            <label>검색 필터</label>
+                        <div className="form-group" style={{ flex: 2, minWidth: '300px', marginRight: '1.5rem' }}>
+                            <label style={{ display: 'block', marginBottom: '0.5rem' }}>검색 필터</label>
                             <div style={{ display: 'flex', gap: '0.5rem' }}>
                                 <select
                                     className="input"
@@ -387,8 +414,12 @@ function RiskAssessmentEditor() {
                         </div>
 
                         <div className="form-group" style={{ flex: 1, minWidth: '250px' }}>
-                            <label>공종</label>
-                            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
+                                <label style={{ display: 'block' }}>
+                                    공종{project.construction_type ? ` (총 ${project.items.length.toLocaleString()}건)` : ''}
+                                </label>
+                            </div>
+                            <div style={{ display: 'flex', gap: '1.25rem', alignItems: 'center' }}>
                                 <select
                                     className="input"
                                     value={project.construction_type}
@@ -498,9 +529,90 @@ function RiskAssessmentEditor() {
 
             {viewMode === 'edit' && (
                 <div className="panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                    <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+                        <div>
                         <h2 style={{ fontSize: '1.1rem', fontWeight: 'bold', margin: 0, color: 'var(--text-primary)' }}>선택 항목 편집</h2>
                         <span className="muted" style={{ fontSize: '0.85rem' }}>{selectedIds.size}개 항목 선택됨</span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <label style={{ fontSize: '0.85rem', whiteSpace: 'nowrap' }}>공종:</label>
+                            <select
+                                className="input"
+                                value={project.construction_type}
+                                onChange={async (e) => {
+                                    const newType = e.target.value;
+
+                                    if (!newType) {
+                                        setProject(prev => ({ ...prev, construction_type: '', items: [] }));
+                                        return;
+                                    }
+
+                                    try {
+                                        const res = await fetch(`${API_BASE}/risk-standards?construction_type=${encodeURIComponent(newType)}`);
+                                        if (!res.ok) throw new Error('Failed to load template');
+                                        const data: any[] = await res.json();
+
+                                        if (data.length === 0) {
+                                            setProject(prev => ({ ...prev, construction_type: newType, items: [] }));
+                                            return;
+                                        }
+
+                                        const knownTypes = ['지침', '사고', 'HP'];
+                                        const newItems = data.map(t => {
+                                            let mType = t.measure || '';
+                                            let mDetail = t.measure_detail || '';
+
+                                            if (mType && !knownTypes.includes(mType) && !mDetail) {
+                                                mDetail = mType;
+                                                mType = '';
+                                            }
+
+                                            return {
+                                                id: crypto.randomUUID(),
+                                                step: t.step || '',
+                                                risk_factor: t.risk_factor || '',
+                                                risk_factor_detail: t.risk_factor_detail || '',
+                                                risk_level: t.risk_level || '중',
+                                                measure: mType,
+                                                measure_detail: mDetail,
+                                                residual_risk: t.residual_risk || '하',
+                                                action_officer: '',
+                                                checker: ''
+                                            };
+                                        });
+
+                                        setProject(prev => ({
+                                            ...prev,
+                                            construction_type: newType,
+                                            items: newItems
+                                        }));
+                                    } catch (err) {
+                                        console.error(err);
+                                        alert('데이터를 불러오는 중 오류가 발생했습니다.');
+                                    }
+                                }}
+                                style={{
+                                    minWidth: '200px',
+                                    height: '38px',
+                                    lineHeight: '38px',
+                                    paddingTop: '0.25rem',
+                                    paddingBottom: '0.25rem'
+                                }}
+                            >
+                                <option value="">공종 선택</option>
+                                {availableTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                            </select>
+                            {project.construction_type && (
+                                <button
+                                    className="btn-secondary"
+                                    onClick={handleDeleteStandard}
+                                    title="해당 공종의 표준 DB 데이터 영구 삭제"
+                                    style={{ height: '34px', padding: '0 0.5rem' }}
+                                >
+                                    <Trash2 size={16} />
+                                </button>
+                            )}
+                        </div>
                     </div>
                     <div style={{ display: 'flex', gap: '0.5rem' }}>
                         {/* Import Button Restored in Edit Mode */}

@@ -15,7 +15,7 @@ const missingKeys = Object.entries(firebaseConfig)
   .filter(([, value]) => !value)
   .map(([key]) => key)
 
-export const firebaseReady = missingKeys.length === 0
+export const firebaseReady = missingKeys.length === 0 && !import.meta.env.DEV && !import.meta.env.DEV
 
 if (!firebaseReady) {
   // eslint-disable-next-line no-console

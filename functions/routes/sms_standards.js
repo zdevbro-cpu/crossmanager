@@ -127,5 +127,23 @@ module.exports = (pool) => {
         }
     })
 
+    // 4. Delete standard items by construction_type
+    router.delete('/risk-standards', async (req, res) => {
+        const { construction_type } = req.query
+        if (!construction_type) {
+            return res.status(400).json({ error: 'construction_type is required' })
+        }
+        try {
+            const result = await pool.query(`
+                DELETE FROM sms_risk_standard_items 
+                WHERE construction_type = $1
+            `, [construction_type])
+            res.json({ deleted: result.rowCount })
+        } catch (err) {
+            console.error('[SMS Standards] Delete Error:', err)
+            res.status(500).json({ error: 'Failed to delete standards' })
+        }
+    })
+
     return router
 }

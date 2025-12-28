@@ -30,7 +30,7 @@ function resolveBucketName() {
         }
     } catch (e) { }
 
-    return 'crossmanager-1e21c.appspot.com'
+    return 'crossmanager-482403.appspot.com'
 }
 
 // Initialize Firebase Admin if not already initialized
@@ -691,3 +691,4 @@ router.delete('/:id', async (req, res) => {
 })
 
 module.exports = router
+

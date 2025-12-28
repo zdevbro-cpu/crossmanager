@@ -6,7 +6,7 @@
         "rules": "firestore.rules"
     },
     "hosting": {
-        "site": "crossmanager",
+        "site": "crossmanagern",
         "public": "dist_all",
         "rewrites": [
             {

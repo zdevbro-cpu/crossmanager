@@ -1,4 +1,4 @@
-const express = require('express')
+﻿const express = require('express')
 const router = express.Router()
 
 function clampInt(value, min, max, fallback) {
@@ -8,11 +8,11 @@ function clampInt(value, min, max, fallback) {
 }
 
 module.exports = (pool) => {
-    // Phase 1: "노멀 정의" 기반의 대시보드 API
+    // Phase 1: "?몃? ?뺤쓽" 湲곕컲????쒕낫??API
     // Base path: /api/swms/dashboard/*
 
     // GET /api/swms/dashboard/debug/summary?siteId
-    // 배포 환경에서 "0" 또는 "Market data is empty" 원인(사이트ID/샘플데이터/매핑)을 빠르게 확인하기 위한 진단용.
+    // 諛고룷 ?섍꼍?먯꽌 "0" ?먮뒗 "Market data is empty" ?먯씤(?ъ씠?퇙D/?섑뵆?곗씠??留ㅽ븨)??鍮좊Ⅴ寃??뺤씤?섍린 ?꾪븳 吏꾨떒??
     router.get('/dashboard/debug/summary', async (req, res) => {
         const siteId = req.query.siteId ? String(req.query.siteId) : null
         const today = new Date().toISOString().slice(0, 10)
@@ -20,15 +20,15 @@ module.exports = (pool) => {
         try {
             const q = `
                 SELECT
-                    (SELECT COUNT(*)::int FROM swms_inbounds  WHERE ($1::text IS NULL OR site_id = $1::text)) AS inbounds_total,
-                    (SELECT COUNT(*)::int FROM swms_outbounds WHERE ($1::text IS NULL OR site_id = $1::text)) AS outbounds_total,
-                    (SELECT COUNT(*)::int FROM swms_weighings WHERE ($1::text IS NULL OR site_id = $1::text)) AS weighings_total,
-                    (SELECT COUNT(*)::int FROM swms_inventory WHERE ($1::text IS NULL OR site_id = $1::text)) AS inventory_rows,
-                    (SELECT COUNT(*)::int FROM swms_process_events WHERE ($1::text IS NULL OR site_id = $1::text)) AS process_events_total,
+                    (SELECT COUNT(*)::int FROM swms_inbounds  WHERE ($1::text IS NULL OR site_id::text = $1::text)) AS inbounds_total,
+                    (SELECT COUNT(*)::int FROM swms_outbounds WHERE ($1::text IS NULL OR site_id::text = $1::text)) AS outbounds_total,
+                    (SELECT COUNT(*)::int FROM swms_weighings WHERE ($1::text IS NULL OR site_id::text = $1::text)) AS weighings_total,
+                    (SELECT COUNT(*)::int FROM swms_inventory WHERE ($1::text IS NULL OR site_id::text = $1::text)) AS inventory_rows,
+                    (SELECT COUNT(*)::int FROM swms_process_events WHERE ($1::text IS NULL OR site_id::text = $1::text)) AS process_events_total,
                     (SELECT COUNT(*)::int FROM swms_market_symbol_map) AS market_symbol_map_rows,
                     (SELECT COUNT(*)::int FROM swms_market_prices_daily WHERE price_date = $2::date) AS market_prices_today_rows,
-                    (SELECT COUNT(*)::int FROM swms_pricing_coefficients WHERE ($1::text IS NULL AND site_id IS NULL) OR site_id = $1::text) AS pricing_coeff_rows,
-                    (SELECT COUNT(*)::int FROM swms_pricing_decisions WHERE ($1::text IS NULL OR site_id = $1::text)) AS pricing_decisions_rows
+                    (SELECT COUNT(*)::int FROM swms_pricing_coefficients WHERE ($1::text IS NULL AND site_id IS NULL) OR site_id::text = $1::text) AS pricing_coeff_rows,
+                    (SELECT COUNT(*)::int FROM swms_pricing_decisions WHERE ($1::text IS NULL OR site_id::text = $1::text)) AS pricing_decisions_rows
             `
             const r = (await pool.query(q, [siteId, today])).rows?.[0] || {}
 
@@ -63,7 +63,7 @@ module.exports = (pool) => {
                     processEvents: await distinct('swms_process_events'),
                 },
                 hint:
-                    'counts가 0이면 해당 siteId로 데이터가 없거나(siteId 불일치) 샘플 시드가 실행되지 않은 상태일 수 있습니다. /api/swms/sites/my로 내려오는 siteId와 DB site_id가 일치하는지 확인하세요.',
+                    'counts媛 0?대㈃ ?대떦 siteId濡??곗씠?곌? ?녾굅??siteId 遺덉씪移? ?섑뵆 ?쒕뱶媛 ?ㅽ뻾?섏? ?딆? ?곹깭?????덉뒿?덈떎. /api/swms/sites/my濡??대젮?ㅻ뒗 siteId? DB site_id媛 ?쇱튂?섎뒗吏 ?뺤씤?섏꽭??',
             })
         } catch (e) {
             console.error('[SWMS dashboard] debug summary error:', e)
@@ -85,46 +85,46 @@ module.exports = (pool) => {
                     SELECT COALESCE(SUM(quantity),0)::numeric AS qty
                     FROM swms_inbounds
                     WHERE inbound_date = (SELECT d FROM base)
-                    AND ($2::text IS NULL OR site_id = $2::text)
+                    AND ($2::text IS NULL OR site_id::text = $2::text)
                 ),
                 out_today AS (
                     SELECT COALESCE(SUM(quantity),0)::numeric AS qty
                     FROM swms_outbounds
                     WHERE outbound_date = (SELECT d FROM base)
-                    AND ($2::text IS NULL OR site_id = $2::text)
+                    AND ($2::text IS NULL OR site_id::text = $2::text)
                 ),
                 in_yesterday AS (
                     SELECT COALESCE(SUM(quantity),0)::numeric AS qty
                     FROM swms_inbounds
                     WHERE inbound_date = (SELECT d FROM base) - interval '1 day'
-                    AND ($2::text IS NULL OR site_id = $2::text)
+                    AND ($2::text IS NULL OR site_id::text = $2::text)
                 ),
                 out_yesterday AS (
                     SELECT COALESCE(SUM(quantity),0)::numeric AS qty
                     FROM swms_outbounds
                     WHERE outbound_date = (SELECT d FROM base) - interval '1 day'
-                    AND ($2::text IS NULL OR site_id = $2::text)
+                    AND ($2::text IS NULL OR site_id::text = $2::text)
                 ),
                 inv AS (
                     SELECT
                         COALESCE(SUM(quantity),0)::numeric AS total_qty,
                         COALESCE(COUNT(*) FILTER (WHERE quantity > 0),0)::int AS item_count
                     FROM swms_inventory
-                    WHERE ($2::text IS NULL OR site_id = $2::text)
+                    WHERE ($2::text IS NULL OR site_id::text = $2::text)
                 ),
                 month_out_confirmed AS (
                     SELECT COALESCE(SUM(total_amount),0)::numeric AS amount
                     FROM swms_outbounds
                     WHERE date_trunc('month', outbound_date) = date_trunc('month', (SELECT d FROM base))
                     AND status IN ('SETTLED')
-                    AND ($2::text IS NULL OR site_id = $2::text)
+                    AND ($2::text IS NULL OR site_id::text = $2::text)
                 ),
                 month_out_expected AS (
                     SELECT COALESCE(SUM(total_amount),0)::numeric AS amount
                     FROM swms_outbounds
                     WHERE date_trunc('month', outbound_date) = date_trunc('month', (SELECT d FROM base))
                     AND status IN ('APPROVED','PENDING')
-                    AND ($2::text IS NULL OR site_id = $2::text)
+                    AND ($2::text IS NULL OR site_id::text = $2::text)
                 ),
                 settlement_pending AS (
                     SELECT
@@ -132,7 +132,7 @@ module.exports = (pool) => {
                         COALESCE(SUM(total_amount),0)::numeric AS amount
                     FROM swms_outbounds
                     WHERE status IN ('APPROVED')
-                    AND ($2::text IS NULL OR site_id = $2::text)
+                    AND ($2::text IS NULL OR site_id::text = $2::text)
                 ),
                 anomalies_open AS (
                     SELECT
@@ -140,7 +140,7 @@ module.exports = (pool) => {
                         COALESCE(COUNT(*) FILTER (WHERE severity='critical'),0)::int AS critical
                     FROM swms_anomalies
                     WHERE status='OPEN'
-                    AND ($2::text IS NULL OR site_id = $2::text)
+                    AND ($2::text IS NULL OR site_id::text = $2::text)
                     AND detected_at >= (SELECT d FROM base) - interval '7 day'
                 )
                 SELECT
@@ -241,7 +241,7 @@ module.exports = (pool) => {
                     FROM swms_weighings
                     WHERE weighing_date = $1::date
                     AND direction = 'OUT'
-                    AND ($2::text IS NULL OR site_id = $2::text)
+                    AND ($2::text IS NULL OR site_id::text = $2::text)
                     GROUP BY EXTRACT(HOUR FROM weighing_time)::int
                 )
                 SELECT
@@ -269,16 +269,16 @@ module.exports = (pool) => {
                 WITH data AS (
                     SELECT
                         COALESCE(m.is_scrap, CASE
-                            WHEN m.category ILIKE '%폐기%' OR m.category ILIKE '%waste%' THEN FALSE
+                            WHEN m.category ILIKE '%?먭린%' OR m.category ILIKE '%waste%' THEN FALSE
                             ELSE TRUE
                         END) AS is_scrap,
                         SUM(o.quantity)::numeric AS qty
                     FROM swms_outbounds o
                     LEFT JOIN swms_material_types m ON m.id = o.material_type_id
                     WHERE o.outbound_date >= CURRENT_DATE - $1::int
-                    AND ($2::text IS NULL OR o.site_id = $2::text)
+                    AND ($2::text IS NULL OR o.site_id::text = $2::text)
                     GROUP BY COALESCE(m.is_scrap, CASE
-                        WHEN m.category ILIKE '%폐기%' OR m.category ILIKE '%waste%' THEN FALSE
+                        WHEN m.category ILIKE '%?먭린%' OR m.category ILIKE '%waste%' THEN FALSE
                         ELSE TRUE
                     END)
                 )
@@ -321,7 +321,7 @@ module.exports = (pool) => {
                     FROM swms_outbounds o
                     LEFT JOIN swms_material_types m ON m.id = o.material_type_id
                     WHERE o.outbound_date >= CURRENT_DATE - $1::int
-                    AND ($2::text IS NULL OR o.site_id = $2::text)
+                    AND ($2::text IS NULL OR o.site_id::text = $2::text)
                     GROUP BY o.outbound_date::date
                 )
                 SELECT
@@ -345,7 +345,7 @@ module.exports = (pool) => {
     })
 
     // GET /api/swms/dashboard/charts/flow?siteId&periodDays=30
-    // Phase 1: Sankey 대신 "단계 축약" 막대 데이터 제공
+    // Phase 1: Sankey ???"?④퀎 異뺤빟" 留됰? ?곗씠???쒓났
     router.get('/dashboard/charts/flow', async (req, res) => {
         const siteId = req.query.siteId ? String(req.query.siteId) : null
         const periodDays = clampInt(req.query.periodDays, 1, 365, 30)
@@ -356,25 +356,25 @@ module.exports = (pool) => {
                     SELECT COALESCE(SUM(quantity),0)::numeric AS qty
                     FROM swms_inbounds
                     WHERE inbound_date >= CURRENT_DATE - $1::int
-                    AND ($2::text IS NULL OR site_id = $2::text)
+                    AND ($2::text IS NULL OR site_id::text = $2::text)
                 ),
                 inventory AS (
                     SELECT COALESCE(SUM(quantity),0)::numeric AS qty
                     FROM swms_inventory
-                    WHERE ($2::text IS NULL OR site_id = $2::text)
+                    WHERE ($2::text IS NULL OR site_id::text = $2::text)
                 ),
                 outbound AS (
                     SELECT COALESCE(SUM(quantity),0)::numeric AS qty
                     FROM swms_outbounds
                     WHERE outbound_date >= CURRENT_DATE - $1::int
-                    AND ($2::text IS NULL OR site_id = $2::text)
+                    AND ($2::text IS NULL OR site_id::text = $2::text)
                 ),
                 settled AS (
                     SELECT COALESCE(SUM(quantity),0)::numeric AS qty
                     FROM swms_outbounds
                     WHERE outbound_date >= CURRENT_DATE - $1::int
                     AND status IN ('SETTLED')
-                    AND ($2::text IS NULL OR site_id = $2::text)
+                    AND ($2::text IS NULL OR site_id::text = $2::text)
                 )
                 SELECT
                     (SELECT qty FROM inbound) AS inbound_qty,
@@ -385,10 +385,10 @@ module.exports = (pool) => {
             const { rows } = await pool.query(q, [periodDays, siteId])
             const r = rows[0] || {}
             res.json([
-                { stage: '입고', quantity: Number(r.inbound_qty || 0) },
-                { stage: '보관(재고)', quantity: Number(r.inventory_qty || 0) },
-                { stage: '출고', quantity: Number(r.outbound_qty || 0) },
-                { stage: '정산(완료)', quantity: Number(r.settled_qty || 0) },
+                { stage: '?낃퀬', quantity: Number(r.inbound_qty || 0) },
+                { stage: '蹂닿?(?ш퀬)', quantity: Number(r.inventory_qty || 0) },
+                { stage: '異쒓퀬', quantity: Number(r.outbound_qty || 0) },
+                { stage: '?뺤궛(?꾨즺)', quantity: Number(r.settled_qty || 0) },
             ])
         } catch (e) {
             console.error('[SWMS dashboard] flow error:', e)
@@ -397,7 +397,7 @@ module.exports = (pool) => {
     })
 
     // GET /api/swms/dashboard/charts/inventory-heatmap?siteId&limit=50
-    // Phase 1: 등급 미정 → material 단위 리스트 반환 (프론트에서 Heatmap 유사 표현)
+    // Phase 1: ?깃툒 誘몄젙 ??material ?⑥쐞 由ъ뒪??諛섑솚 (?꾨줎?몄뿉??Heatmap ?좎궗 ?쒗쁽)
     router.get('/dashboard/charts/inventory-heatmap', async (req, res) => {
         const siteId = req.query.siteId ? String(req.query.siteId) : null
         const limit = clampInt(req.query.limit, 1, 200, 50)
@@ -409,7 +409,7 @@ module.exports = (pool) => {
                     SUM(COALESCE(i.quantity,0))::numeric AS quantity
                 FROM swms_inventory i
                 LEFT JOIN swms_material_types m ON m.id = i.material_type_id
-                WHERE ($1::text IS NULL OR i.site_id = $1::text)
+                WHERE ($1::text IS NULL OR i.site_id::text = $1::text)
                 GROUP BY m.id, m.name
                 ORDER BY SUM(COALESCE(i.quantity,0)) DESC
                 LIMIT $2::int
@@ -448,7 +448,7 @@ module.exports = (pool) => {
                 LEFT JOIN swms_material_types m ON m.id = o.material_type_id
                 WHERE o.outbound_date = $1::date
                 AND o.status IN ('PENDING')
-                AND ($2::text IS NULL OR o.site_id = $2::text)
+                AND ($2::text IS NULL OR o.site_id::text = $2::text)
                 ORDER BY o.created_at DESC
                 LIMIT 50
             `
@@ -466,7 +466,7 @@ module.exports = (pool) => {
                 LEFT JOIN swms_material_types m ON m.id = i.material_type_id
                 WHERE i.inbound_date = $1::date
                 AND (i.inspection_status IS NULL OR i.inspection_status = '')
-                AND ($2::text IS NULL OR i.site_id = $2::text)
+                AND ($2::text IS NULL OR i.site_id::text = $2::text)
                 ORDER BY i.created_at DESC
                 LIMIT 50
             `
@@ -483,7 +483,7 @@ module.exports = (pool) => {
                 FROM swms_settlements s
                 LEFT JOIN swms_vendors v ON v.id = s.vendor_id
                 WHERE s.status IN ('DRAFT')
-                AND ($1::text IS NULL OR s.site_id = $1::text)
+                AND ($1::text IS NULL OR s.site_id::text = $1::text)
                 ORDER BY s.created_at DESC
                 LIMIT 50
             `
@@ -521,20 +521,20 @@ module.exports = (pool) => {
                         COUNT(*) FILTER (WHERE severity='warn')::int AS warn
                     FROM swms_anomalies
                     WHERE detected_at >= NOW() - ($1::int || ' days')::interval
-                    AND ($2::text IS NULL OR site_id = $2::text)
+                    AND ($2::text IS NULL OR site_id::text = $2::text)
                 ),
                 negative_inventory AS (
                     SELECT COUNT(*)::int AS cnt
                     FROM swms_inventory
                     WHERE quantity < 0
-                    AND ($2::text IS NULL OR site_id = $2::text)
+                    AND ($2::text IS NULL OR site_id::text = $2::text)
                 ),
                 allbaro AS (
                     SELECT
                         COUNT(*) FILTER (WHERE sync_status='FAILED')::int AS failed,
                         COUNT(*) FILTER (WHERE sync_status='PENDING')::int AS pending
                     FROM swms_allbaro_sync
-                    WHERE ($2::text IS NULL OR site_id = $2::text)
+                    WHERE ($2::text IS NULL OR site_id::text = $2::text)
                 )
                 SELECT
                     (SELECT total FROM anomalies) AS anomalies_total,
@@ -570,7 +570,7 @@ module.exports = (pool) => {
     })
 
     // GET /api/swms/dashboard/charts/sankey?siteId&periodDays=30&mode=status|category|material&maxZones=9
-    // Based on swms_process_events (INBOUND→SORT→STORAGE(Zone)→OUTBOUND→SETTLEMENT)
+    // Based on swms_process_events (INBOUND?뭆ORT?뭆TORAGE(Zone)?뭀UTBOUND?뭆ETTLEMENT)
     router.get('/dashboard/charts/sankey', async (req, res) => {
         const siteId = req.query.siteId ? String(req.query.siteId) : null
         const periodDays = clampInt(req.query.periodDays, 1, 365, 30)
@@ -593,36 +593,43 @@ module.exports = (pool) => {
                 LEFT JOIN swms_warehouses w ON w.id = e.warehouse_id
                 LEFT JOIN swms_material_types m ON m.id = e.material_type_id
                 WHERE e.occurred_at >= NOW() - ($1::int || ' days')::interval
-                AND ($2::text IS NULL OR e.site_id = $2::text)
+                AND ($2::text IS NULL OR e.site_id::text = $2::text)
                 AND (e.warehouse_id IS NULL OR w.id IS NOT NULL)
             `
             const { rows } = await pool.query(q, [periodDays, siteId])
 
             const stageLabel = (stage, row) => {
                 switch (stage) {
-                    case 'INBOUND': return '입고'
-                    case 'SORT': return '선별'
+                    case 'INBOUND':
+                        return 'Inbound'
+                    case 'SORT':
+                        return 'Sort'
                     case 'STORAGE': {
                         const zone = row.warehouse_name || row.warehouse_id || 'Zone'
-                        return `보관:${zone}`
+                        return 'Storage:' + zone
                     }
-                    case 'OUTBOUND': return '출고'
-                    case 'SETTLEMENT_CONFIRMED': return '정산(확정)'
-                    case 'SETTLEMENT_PENDING': return '정산(대기)'
-                    case 'SETTLEMENT': return '정산'
-                    default: return String(stage || 'Unknown')
+                    case 'OUTBOUND':
+                        return 'Outbound'
+                    case 'SETTLEMENT_CONFIRMED':
+                        return 'Settlement (Confirmed)'
+                    case 'SETTLEMENT_PENDING':
+                        return 'Settlement (Pending)'
+                    case 'SETTLEMENT':
+                        return 'Settlement'
+                    default:
+                        return String(stage || 'Unknown')
                 }
             }
 
             const dimensionSuffix = (row) => {
                 const grade = row.grade ? String(row.grade) : 'A'
                 if (mode === 'category') {
-                    const cat = row.material_category ? String(row.material_category) : '미분류'
-                    return `(${cat}/${grade})`
+                    const cat = row.material_category ? String(row.material_category) : 'Unknown'
+                    return '(' + cat + '/' + grade + ')'
                 }
                 if (mode === 'material') {
                     const mat = row.material_name ? String(row.material_name) : 'Unknown'
-                    return `(${mat}/${grade})`
+                    return '(' + mat + '/' + grade + ')'
                 }
                 return ''
             }
@@ -643,11 +650,11 @@ module.exports = (pool) => {
                     return { sourceName: src, targetName: dst, value: Number(v) }
                 })
 
-            // Readability: keep top-N storage(Zone) nodes and group the rest into "보관:기타"
+            // Readability: keep top-N storage(Zone) nodes and group the rest into "蹂닿?:湲고?"
             const storageTotals = new Map()
             for (const l of linkPairs) {
-                if (l.sourceName.startsWith('보관:')) storageTotals.set(l.sourceName, (storageTotals.get(l.sourceName) || 0) + l.value)
-                if (l.targetName.startsWith('보관:')) storageTotals.set(l.targetName, (storageTotals.get(l.targetName) || 0) + l.value)
+                if (l.sourceName.startsWith('蹂닿?:')) storageTotals.set(l.sourceName, (storageTotals.get(l.sourceName) || 0) + l.value)
+                if (l.targetName.startsWith('蹂닿?:')) storageTotals.set(l.targetName, (storageTotals.get(l.targetName) || 0) + l.value)
             }
             const storageNames = Array.from(storageTotals.entries()).sort((a, b) => b[1] - a[1]).map(([n]) => n)
             const keepStorage = new Set(storageNames.slice(0, maxZones))
@@ -655,8 +662,8 @@ module.exports = (pool) => {
 
             const normalizedLinks = shouldGroup
                 ? linkPairs.map((l) => ({
-                    sourceName: l.sourceName.startsWith('보관:') && !keepStorage.has(l.sourceName) ? '보관:기타' : l.sourceName,
-                    targetName: l.targetName.startsWith('보관:') && !keepStorage.has(l.targetName) ? '보관:기타' : l.targetName,
+                    sourceName: l.sourceName.startsWith('蹂닿?:') && !keepStorage.has(l.sourceName) ? '蹂닿?:湲고?' : l.sourceName,
+                    targetName: l.targetName.startsWith('蹂닿?:') && !keepStorage.has(l.targetName) ? '蹂닿?:湲고?' : l.targetName,
                     value: l.value,
                 }))
                 : linkPairs
@@ -699,7 +706,7 @@ module.exports = (pool) => {
                             e.occurred_at AS t_in
                         FROM swms_process_events e
                         WHERE e.occurred_at >= NOW() - ($1::int || ' days')::interval
-                        AND ($2::text IS NULL OR e.site_id = $2::text)
+                        AND ($2::text IS NULL OR e.site_id::text = $2::text)
                         AND e.from_stage = 'INBOUND'
                         AND e.to_stage = 'SORT'
                         AND e.meta ? 'flowId'
@@ -710,7 +717,7 @@ module.exports = (pool) => {
                             e.occurred_at AS t_out
                         FROM swms_process_events e
                         WHERE e.occurred_at >= NOW() - ($1::int || ' days')::interval
-                        AND ($2::text IS NULL OR e.site_id = $2::text)
+                        AND ($2::text IS NULL OR e.site_id::text = $2::text)
                         AND e.from_stage = 'SORT'
                         AND e.to_stage = 'STORAGE'
                         AND e.meta ? 'flowId'
@@ -761,7 +768,7 @@ module.exports = (pool) => {
                 WITH inv AS (
                     SELECT warehouse_id, COALESCE(SUM(quantity),0)::numeric AS qty
                     FROM swms_inventory
-                    WHERE ($1::text IS NULL OR site_id = $1::text)
+                    WHERE ($1::text IS NULL OR site_id::text = $1::text)
                     GROUP BY warehouse_id
                 ),
                 aging AS (
@@ -771,7 +778,7 @@ module.exports = (pool) => {
                         MIN(inbound_date)::date AS min_inbound_date
                     FROM swms_inbounds
                     WHERE inbound_date >= CURRENT_DATE - 180
-                    AND ($1::text IS NULL OR site_id = $1::text)
+                    AND ($1::text IS NULL OR site_id::text = $1::text)
                     GROUP BY warehouse_id
                 )
                 SELECT
@@ -779,7 +786,7 @@ module.exports = (pool) => {
                     w.name AS warehouse_name,
                     w.type AS warehouse_type,
                     w.capacity::numeric AS capacity,
-                    COALESCE(w.unit,'톤') AS unit,
+                    COALESCE(w.unit,'TON') AS unit,
                     COALESCE(i.qty,0)::numeric AS quantity,
                     CASE
                         WHEN w.capacity IS NULL OR w.capacity = 0 THEN NULL
@@ -792,7 +799,7 @@ module.exports = (pool) => {
                 FROM swms_warehouses w
                 LEFT JOIN inv i ON i.warehouse_id = w.id
                 LEFT JOIN aging a ON a.warehouse_id = w.id
-                WHERE ($1::text IS NULL OR w.site_id = $1::text)
+                WHERE ($1::text IS NULL OR w.site_id::text = $1::text)
                 ORDER BY w.name ASC
             `
             const { rows } = await pool.query(q, [siteId])
@@ -804,7 +811,7 @@ module.exports = (pool) => {
                     warehouseId: String(r.warehouse_id),
                     warehouseName: r.warehouse_name || 'Zone',
                     type: r.warehouse_type || null,
-                    unit: r.unit || '톤',
+                    unit: r.unit || 'TON',
                     capacity: r.capacity === null || r.capacity === undefined ? null : Number(r.capacity),
                     quantity: Number(r.quantity || 0),
                     fillRatePct: r.fill_rate_pct === null || r.fill_rate_pct === undefined ? null : Number(r.fill_rate_pct),
@@ -819,3 +826,10 @@ module.exports = (pool) => {
 
     return router
 }
+
+
+
+
+
+
+
