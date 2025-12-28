@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const router = express.Router();
 
 module.exports = (pool) => {
@@ -37,10 +37,10 @@ module.exports = (pool) => {
             await pool.query(`
                 CREATE TABLE IF NOT EXISTS swms_material_types (
                     id VARCHAR(100) PRIMARY KEY DEFAULT gen_random_uuid()::text,
-                    code VARCHAR(50),
+                    code VARCHAR(50) NOT NULL,
                     name VARCHAR(100) NOT NULL,
                     category VARCHAR(50),
-                    unit VARCHAR(20) DEFAULT '톤',
+                    unit VARCHAR(20) DEFAULT 'TON',
                     unit_price DECIMAL(10, 2) DEFAULT 0,
                     symbol VARCHAR(10)
                 )
@@ -49,20 +49,21 @@ module.exports = (pool) => {
             const mtCountRes = await pool.query('SELECT COUNT(*)::int AS cnt FROM swms_material_types');
             if ((mtCountRes.rows[0]?.cnt || 0) === 0) {
                 await pool.query(`
-                INSERT INTO swms_material_types (name, category, unit, unit_price, symbol) VALUES
-                ('스크랩-구리 A', '스크랩', '톤', 8500000, 'CU'),
-                ('스크랩-알루미늄', '스크랩', '톤', 1800000, 'AL'),
-                ('스크랩-아연', '스크랩', '톤', 3200000, 'ZN'),
-                ('스크랩-주석', '스크랩', '톤', 28000000, 'SN'),
-                ('철근스크랩', '스크랩', '톤', 350000, NULL),
-                ('혼합폐기물', '폐기물', '톤', -150000, NULL)
-            `);
+                INSERT INTO swms_material_types (code, name, category, unit, unit_price, symbol) VALUES
+('SCRAP_CU_A', '스크랩-구리 A', '스크랩', '톤', 8500000, 'CU'),
+('SCRAP_AL', '스크랩-알루미늄', '스크랩', '톤', 1800000, 'AL'),
+('SCRAP_ZN', '스크랩-아연', '스크랩', '톤', 3200000, 'ZN'),
+('SCRAP_SN', '스크랩-주석', '스크랩', '톤', 28000000, 'SN'),
+('SCRAP_MISC', '기타 스크랩', '스크랩', '톤', 350000, NULL),
+('WASTE_MISC', '혼합 폐기물', '폐기물', '톤', -150000, NULL)
+`);
             }
 
             // Vendors
             await pool.query(`
                 CREATE TABLE IF NOT EXISTS swms_vendors (
                     id VARCHAR(100) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+                    code VARCHAR(50) NOT NULL,
                     name VARCHAR(100) NOT NULL,
                     type VARCHAR(50), 
                     contact VARCHAR(100),
@@ -73,13 +74,93 @@ module.exports = (pool) => {
             const vendorCountRes = await pool.query('SELECT COUNT(*)::int AS cnt FROM swms_vendors');
             if ((vendorCountRes.rows[0]?.cnt || 0) === 0) {
                 await pool.query(`
-                INSERT INTO swms_vendors (name, type) VALUES
-                ('동부제철', '매입처'),
-                ('현대제철', '매입처'),
-                ('파주환경', '처리업체'),
-                ('대성자원', '운반업체')
+                INSERT INTO swms_vendors (code, name, type) VALUES
+('VEND-A', 'Vendor A', 'RECYCLER'),
+('VEND-B', 'Vendor B', 'RECYCLER'),
+('YARD-A', 'Yard Partner', 'TRANSPORT'),
+('DISP-A', 'Disposal Co', 'DISPOSAL')
             `);
             }
+
+            // Dashboard support tables (minimal schema for analytics)
+            await pool.query(`
+                CREATE TABLE IF NOT EXISTS swms_process_events (
+                    id VARCHAR(100) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+                    site_id VARCHAR(100),
+                    warehouse_id VARCHAR(100),
+                    material_type_id UUID,
+                    grade TEXT DEFAULT 'A',
+                    from_stage VARCHAR(30) NOT NULL,
+                    to_stage VARCHAR(30) NOT NULL,
+                    quantity NUMERIC(12, 2) DEFAULT 0,
+                    unit VARCHAR(20) DEFAULT 'TON',
+                    occurred_at TIMESTAMPTZ DEFAULT NOW(),
+                    meta JSONB DEFAULT '{}'::jsonb,
+                    created_at TIMESTAMPTZ DEFAULT NOW()
+                )
+            `)
+
+            await pool.query(`
+                CREATE TABLE IF NOT EXISTS swms_market_symbol_map (
+                    material_type_id UUID,
+                    symbol VARCHAR(20),
+                    source VARCHAR(50),
+                    PRIMARY KEY (material_type_id)
+                )
+            `)
+
+            await pool.query(`
+                CREATE TABLE IF NOT EXISTS swms_market_prices_daily (
+                    symbol VARCHAR(20) NOT NULL,
+                    price_date DATE NOT NULL,
+                    usd_per_ton NUMERIC(12, 4),
+                    fx_usd_krw NUMERIC(12, 4),
+                    krw_per_ton NUMERIC(12, 2),
+                    source VARCHAR(50),
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    PRIMARY KEY (symbol, price_date)
+                )
+            `)
+
+            await pool.query(`
+                CREATE TABLE IF NOT EXISTS swms_pricing_coefficients (
+                    site_id VARCHAR(100),
+                    material_type_id UUID,
+                    coefficient_pct NUMERIC(8, 4) DEFAULT 0,
+                    fixed_cost_krw_per_ton NUMERIC(12, 2) DEFAULT 0,
+                    updated_at DATE DEFAULT CURRENT_DATE
+                )
+            `)
+
+            await pool.query(`
+                CREATE TABLE IF NOT EXISTS swms_pricing_decisions (
+                    site_id VARCHAR(100),
+                    material_type_id UUID,
+                    price_date DATE DEFAULT CURRENT_DATE,
+                    approved_price_krw_per_ton NUMERIC(12, 2) DEFAULT 0,
+                    approved_at TIMESTAMPTZ DEFAULT NOW()
+                )
+            `)
+
+            await pool.query(`
+                CREATE TABLE IF NOT EXISTS swms_anomalies (
+                    id VARCHAR(100) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+                    site_id VARCHAR(100),
+                    severity VARCHAR(20) DEFAULT 'warn',
+                    status VARCHAR(20) DEFAULT 'OPEN',
+                    detected_at DATE DEFAULT CURRENT_DATE,
+                    created_at TIMESTAMPTZ DEFAULT NOW()
+                )
+            `)
+
+            await pool.query(`
+                CREATE TABLE IF NOT EXISTS swms_allbaro_sync (
+                    id VARCHAR(100) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+                    site_id VARCHAR(100),
+                    sync_status VARCHAR(20) DEFAULT 'PENDING',
+                    created_at TIMESTAMPTZ DEFAULT NOW()
+                )
+            `)
 
             // Warehouses
             await pool.query(`
@@ -95,7 +176,7 @@ module.exports = (pool) => {
             // Optional columns used by dashboard heatmap/zone views (safe no-op if already present)
             await pool.query(`ALTER TABLE swms_warehouses ADD COLUMN IF NOT EXISTS code VARCHAR(50)`)
             await pool.query(`ALTER TABLE swms_warehouses ADD COLUMN IF NOT EXISTS capacity NUMERIC(15,2)`)
-            await pool.query(`ALTER TABLE swms_warehouses ADD COLUMN IF NOT EXISTS unit VARCHAR(20) DEFAULT '톤'`)
+            await pool.query(`ALTER TABLE swms_warehouses ADD COLUMN IF NOT EXISTS unit VARCHAR(20) DEFAULT 'TON'`)
             await pool.query(`ALTER TABLE swms_warehouses ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE`)
 
             // Generations
@@ -105,7 +186,7 @@ module.exports = (pool) => {
                     site_id VARCHAR(100),
                     project_id VARCHAR(100),
                     generation_date DATE DEFAULT CURRENT_DATE,
-                    material_type_id VARCHAR(100) REFERENCES swms_material_types(id),
+                    material_type_id UUID REFERENCES swms_material_types(id),
                     process_name VARCHAR(100),
                     quantity DECIMAL(12, 2) DEFAULT 0,
                     unit VARCHAR(20),
@@ -128,7 +209,7 @@ module.exports = (pool) => {
                     vehicle_number VARCHAR(20),
                     driver_name VARCHAR(50),
                     driver_contact VARCHAR(50),
-                    material_type_id VARCHAR(100) REFERENCES swms_material_types(id),
+                    material_type_id UUID REFERENCES swms_material_types(id),
                     direction VARCHAR(10) DEFAULT 'IN',
                     gross_weight DECIMAL(12, 2) DEFAULT 0,
                     tare_weight DECIMAL(12, 2) DEFAULT 0,
@@ -139,6 +220,7 @@ module.exports = (pool) => {
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             `);
+            await pool.query(`ALTER TABLE swms_weighings ADD COLUMN IF NOT EXISTS weighing_time TIME DEFAULT CURRENT_TIME`)
 
             // Inventory
             await pool.query(`
@@ -146,7 +228,7 @@ module.exports = (pool) => {
                     id VARCHAR(100) PRIMARY KEY DEFAULT gen_random_uuid()::text,
                     site_id VARCHAR(100),
                     warehouse_id VARCHAR(100), 
-                    material_type_id VARCHAR(100) REFERENCES swms_material_types(id),
+                    material_type_id UUID REFERENCES swms_material_types(id),
                     quantity DECIMAL(12, 2) DEFAULT 0,
                     last_updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE(site_id, warehouse_id, material_type_id)
@@ -159,7 +241,7 @@ module.exports = (pool) => {
                     id VARCHAR(100) PRIMARY KEY DEFAULT gen_random_uuid()::text,
                     site_id VARCHAR(100),
                     warehouse_id VARCHAR(100),
-                    material_type_id VARCHAR(100),
+                    material_type_id UUID,
                     quantity DECIMAL(12, 2) NOT NULL,
                     reason TEXT,
                     adjustment_type VARCHAR(50),
@@ -177,7 +259,7 @@ module.exports = (pool) => {
                     outbound_date DATE DEFAULT CURRENT_DATE,
                     warehouse_id VARCHAR(100),
                     vendor_id VARCHAR(100) REFERENCES swms_vendors(id),
-                    material_type_id VARCHAR(100) REFERENCES swms_material_types(id),
+                    material_type_id UUID REFERENCES swms_material_types(id),
                     quantity DECIMAL(12, 2) DEFAULT 0,
                     unit_price DECIMAL(15, 2) DEFAULT 0,
                     total_amount DECIMAL(15, 2) DEFAULT 0,
@@ -195,7 +277,7 @@ module.exports = (pool) => {
                     inbound_date DATE DEFAULT CURRENT_DATE,
                     warehouse_id VARCHAR(100),
                     vendor_id VARCHAR(100) REFERENCES swms_vendors(id),
-                    material_type_id VARCHAR(100) REFERENCES swms_material_types(id),
+                    material_type_id UUID REFERENCES swms_material_types(id),
                     quantity DECIMAL(12, 2) DEFAULT 0,
                     unit_price DECIMAL(15, 2) DEFAULT 0,
                     total_amount DECIMAL(15, 2) DEFAULT 0,
@@ -262,11 +344,11 @@ module.exports = (pool) => {
     router.get('/sites/:siteId/warehouses', async (req, res) => {
         const { siteId } = req.params;
         try {
-            let { rows } = await pool.query('SELECT * FROM swms_warehouses WHERE site_id = $1', [siteId]);
+            let { rows } = await pool.query('SELECT * FROM swms_warehouses WHERE site_id::text = $1::text', [siteId]);
             if (rows.length === 0) {
                 res.json([
-                    { id: 'wh-default-1', name: '야적장 (Main Yard)', type: 'Open', site_id: siteId },
-                    { id: 'wh-default-2', name: '폐기물 임시보관소', type: 'Indoor', site_id: siteId }
+                    { id: 'wh-default-1', name: 'Main Yard', type: 'Open', site_id: siteId },
+                    { id: 'wh-default-2', name: 'Indoor Storage', type: 'Indoor', site_id: siteId }
                 ]);
             } else {
                 res.json(rows);
@@ -276,7 +358,7 @@ module.exports = (pool) => {
 
     // --- Site (Factory/Yard) Routes ---
     router.get('/sites/my', async (req, res) => {
-        // Prefer DB-backed sites when available so SWMS siteId matches DB foreign keys (UUID 포함).
+        // Prefer DB-backed sites when available so SWMS siteId matches DB foreign keys (UUID ?ы븿).
         try {
             const q = `
                 SELECT
@@ -295,7 +377,29 @@ module.exports = (pool) => {
                 ORDER BY s.created_at DESC
                 LIMIT 50
             `
-            const { rows } = await pool.query(q)
+            let rows = []
+            try {
+                const result = await pool.query(q)
+                rows = result.rows
+            } catch (e) {
+                console.warn('[SWMS] /sites/my join failed, retrying without companies:', e.message)
+                const q2 = `
+                    SELECT
+                        s.id::text AS id,
+                        s.company_id::text AS company_id,
+                        s.code,
+                        s.name,
+                        s.type,
+                        s.address,
+                        COALESCE(s.is_active, TRUE) AS is_active
+                    FROM swms_sites s
+                    WHERE COALESCE(s.is_active, TRUE) = TRUE
+                    ORDER BY s.created_at DESC
+                    LIMIT 50
+                `
+                const result = await pool.query(q2)
+                rows = result.rows
+            }
             if (rows.length > 0) {
                 const companyRow = rows.find(r => r.company_id) || rows[0]
                 res.json({
@@ -325,9 +429,9 @@ module.exports = (pool) => {
         // Fallback: Return fixed list of factories/yards for SWMS context
         // This decouples SWMS "Sites" from PMS "Projects"
         const sites = [
-            { id: 'FAC-001', company_id: 'CMD-001', code: 'FAC-001', name: '인천 본사 공장', type: 'FACTORY', address: '인천광역시 서구', is_active: true, company_name: 'Cross Material Dynamics' },
-            { id: 'YARD-001', company_id: 'CMD-001', code: 'YARD-001', name: '파주 야적장', type: 'YARD', address: '경기도 파주시', is_active: true, company_name: 'Cross Material Dynamics' },
-            { id: 'FAC-002', company_id: 'CMD-001', code: 'FAC-002', name: '부산 제2공장', type: 'FACTORY', address: '부산광역시 강서구', is_active: true, company_name: 'Cross Material Dynamics' },
+            { id: 'FAC-001', company_id: 'CMD-001', code: 'FAC-001', name: 'Factory A', type: 'FACTORY', address: 'Paju', is_active: true, company_name: 'Cross Material Dynamics' },
+            { id: 'YARD-001', company_id: 'CMD-001', code: 'YARD-001', name: 'Yard A', type: 'YARD', address: 'Paju', is_active: true, company_name: 'Cross Material Dynamics' },
+            { id: 'FAC-002', company_id: 'CMD-001', code: 'FAC-002', name: 'Factory B', type: 'FACTORY', address: 'Pyeongtaek', is_active: true, company_name: 'Cross Material Dynamics' },
         ]
 
         res.json({
@@ -347,7 +451,7 @@ module.exports = (pool) => {
             `;
             const params = [];
             if (site_id) {
-                query += ' WHERE g.site_id = $1';
+                query += ' WHERE g.site_id::text = $1::text';
                 params.push(site_id);
             }
             query += ' ORDER BY g.generation_date DESC, g.created_at DESC';
@@ -401,7 +505,7 @@ module.exports = (pool) => {
             const params = [];
             const conditions = [];
             if (site_id) {
-                conditions.push(`w.site_id = $${params.length + 1}`);
+                conditions.push(`w.site_id::text = $${params.length + 1}::text`);
                 params.push(site_id);
             }
             if (direction) {
@@ -461,11 +565,11 @@ module.exports = (pool) => {
             const { site_id } = req.query;
             const query = `
                 SELECT i.*, m.name as material_name, m.category as material_category, 
-                       CASE WHEN w.name IS NULL THEN '기본 창고' ELSE w.name END as warehouse_name
+                       CASE WHEN w.name IS NULL THEN '湲곕낯 李쎄퀬' ELSE w.name END as warehouse_name
                 FROM swms_inventory i
                 LEFT JOIN swms_material_types m ON i.material_type_id = m.id
                 LEFT JOIN swms_warehouses w ON i.warehouse_id = w.id
-                WHERE i.site_id = $1
+                WHERE i.site_id::text = $1::text
             `;
             const { rows } = await pool.query(query, [site_id]);
             res.json(rows);
@@ -507,14 +611,14 @@ module.exports = (pool) => {
             const { site_id } = req.query;
             let query = `
                 SELECT i.*, m.name as material_name, v.name as vendor_name, 
-                       CASE WHEN w.name IS NULL THEN '기본 창고' ELSE w.name END as warehouse_name
+                       CASE WHEN w.name IS NULL THEN '湲곕낯 李쎄퀬' ELSE w.name END as warehouse_name
                 FROM swms_inbounds i
                 LEFT JOIN swms_material_types m ON i.material_type_id = m.id
                 LEFT JOIN swms_vendors v ON i.vendor_id = v.id
                 LEFT JOIN swms_warehouses w ON i.warehouse_id = w.id
             `;
             if (site_id) {
-                query += ' WHERE i.site_id = $1';
+                query += ' WHERE i.site_id::text = $1::text';
             }
             query += ' ORDER BY i.inbound_date DESC';
             const { rows } = await pool.query(query, site_id ? [site_id] : []);
@@ -594,14 +698,14 @@ module.exports = (pool) => {
             const { site_id } = req.query;
             let query = `
                 SELECT o.*, m.name as material_name, v.name as vendor_name, 
-                       CASE WHEN w.name IS NULL THEN '기본 창고' ELSE w.name END as warehouse_name
+                       CASE WHEN w.name IS NULL THEN '湲곕낯 李쎄퀬' ELSE w.name END as warehouse_name
                 FROM swms_outbounds o
                 LEFT JOIN swms_material_types m ON o.material_type_id = m.id
                 LEFT JOIN swms_vendors v ON o.vendor_id = v.id
                 LEFT JOIN swms_warehouses w ON o.warehouse_id = w.id
             `;
             if (site_id) {
-                query += ' WHERE o.site_id = $1';
+                query += ' WHERE o.site_id::text = $1::text';
             }
             query += ' ORDER BY o.outbound_date DESC';
             const { rows } = await pool.query(query, site_id ? [site_id] : []);
@@ -677,7 +781,7 @@ module.exports = (pool) => {
                 LEFT JOIN swms_vendors v ON s.vendor_id = v.id
             `;
             if (site_id) {
-                query += ' WHERE s.site_id = $1';
+                query += ' WHERE s.site_id::text = $1::text';
             }
             query += ' ORDER BY s.created_at DESC';
             const { rows } = await pool.query(query, site_id ? [site_id] : []);
@@ -692,7 +796,7 @@ module.exports = (pool) => {
                 SELECT o.*, m.name as material_name
                 FROM swms_outbounds o
                 LEFT JOIN swms_material_types m ON o.material_type_id = m.id
-                WHERE o.site_id = $1 AND o.vendor_id = $2 AND o.status = 'APPROVED'
+                WHERE o.site_id::text = $1::text AND o.vendor_id = $2 AND o.status = 'APPROVED'
                 AND o.id NOT IN (SELECT outbound_id FROM swms_settlement_items)
             `;
             const params = [site_id, vendor_id];
@@ -808,7 +912,7 @@ module.exports = (pool) => {
             revenue_estimated: 52000000,
             item_breakdown: { "iron": 90.0, "copper": 8.5, "waste": 46.7 },
             abnormal_transactions: 0,
-            highlights: ["구리 시세 상승으로 수익률 5% 증가", "A구역 폐기물 반출 완료"]
+            highlights: ["援щ━ ?쒖꽭 ?곸듅?쇰줈 ?섏씡瑜?5% 利앷?", "A援ъ뿭 ?먭린臾?諛섏텧 ?꾨즺"]
         };
         await new Promise(r => setTimeout(r, 100)); // Sim delay
         res.json(summaryBlock);
@@ -816,3 +920,10 @@ module.exports = (pool) => {
 
     return router;
 };
+
+
+
+
+
+
+

@@ -6,7 +6,7 @@ import { firebaseReady } from '../lib/firebase'
 import { useToast } from '../components/ToastProvider'
 
 function LoginPage() {
-  const { signIn, signOut } = useAuth()
+  const { signIn } = useAuth()
   const { show } = useToast()
   const navigate = useNavigate()
   const location = useLocation()
@@ -17,29 +17,27 @@ function LoginPage() {
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-    if (!firebaseReady) {
-      show('Firebase 설정이 없어 로그인할 수 없습니다. .env.local을 확인하세요.', 'warning')
-      return
-    }
     if (!email || !password) {
-      show('이메일/비밀번호를 입력하세요.', 'warning')
+      show('?�메??비�?번호�??�력?�세??', 'warning')
       return
     }
     setLoading(true)
     try {
       // 1. Firebase Login
+      if (!firebaseReady) {
+        show('Firebase env missing. Using local login fallback.', 'warning')
+      }
       await signIn(email, password)
 
       // 2. Check Backend Status
       // 2. Check Backend Status skipped
       // if (auth && auth.currentUser) { ... }
 
-      show('로그인 성공', 'success')
+      show('로그???�공', 'success')
       navigate(from, { replace: true })
     } catch (err: any) {
       console.error(err)
-      await signOut()
-      show('로그인 실패: 이메일/비번 또는 승인 상태를 확인하세요.', 'error')
+      show('로그???�패: ?�메??비번 ?�는 ?�인 ?�태�??�인?�세??', 'error')
     } finally {
       setLoading(false)
     }
@@ -48,12 +46,12 @@ function LoginPage() {
   return (
     <div className="center-page">
       <div className="auth-card">
-        <h2>직원 로그인</h2>
-        <p className="muted">승인된 이메일 계정으로 접속해주세요.</p>
+        <h2>직원 로그??/h2>
+        <p className="muted">?�인???�메??계정?�로 ?�속?�주?�요.</p>
 
         <form onSubmit={handleSubmit} className="auth-form">
           <label>
-            <span>이메일</span>
+            <span>?�메??/span>
             <input
               type="email"
               value={email}
@@ -61,7 +59,7 @@ function LoginPage() {
             />
           </label>
           <label>
-            <span>비밀번호</span>
+            <span>비�?번호</span>
             <input
               type="password"
               value={password}
@@ -69,12 +67,12 @@ function LoginPage() {
             />
           </label>
           <button type="submit" className="btn-primary" disabled={loading}>
-            {loading ? '확인 중...' : '로그인'}
+            {loading ? '?�인 �?..' : '로그??}
           </button>
         </form>
 
         <div className="auth-footer">
-          <p>계정이 없으신가요? <a onClick={() => navigate('/signup')}>직원 등록(가입요청)</a></p>
+          <p>계정???�으?��??? <a onClick={() => navigate('/signup')}>직원 ?�록(가?�요�?</a></p>
         </div>
       </div>
     </div>
@@ -82,3 +80,11 @@ function LoginPage() {
 }
 
 export default LoginPage
+
+
+
+
+
+
+
+
