@@ -8,7 +8,6 @@ import './RiskAssessmentEditor.css';
 
 const STORAGE_KEY_PROJECT = 'cross-specialness-project-v1';
 const API_BASE = '/api/sms';
-
 function RiskAssessmentEditor() {
     const navigate = useNavigate();
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -46,6 +45,11 @@ function RiskAssessmentEditor() {
             if (!res.ok) throw new Error('Failed to fetch types');
             const data = await res.json();
             setAvailableTypes(data);
+            if (data.length === 0) {
+                setProject(prev => ({ ...prev, construction_type: '', items: [] }));
+            } else if (!data.includes(project.construction_type) && viewMode === 'list') {
+                setProject(prev => ({ ...prev, construction_type: '', items: [] }));
+            }
         } catch (err) {
             console.error(err);
             // Fallback or silent fail
@@ -60,6 +64,85 @@ function RiskAssessmentEditor() {
     useEffect(() => {
         localStorage.setItem(STORAGE_KEY_PROJECT, JSON.stringify(project));
     }, [project]);
+
+    const getAvailableTypesWithCurrent = () => {
+        if (!project.construction_type || availableTypes.includes(project.construction_type)) {
+            return availableTypes;
+        }
+        return [...availableTypes, project.construction_type];
+    };
+
+    const buildItemsFromStandards = (data: any[]) => {
+        const knownTypes = ['지침', '사고', 'HP'];
+
+        return data.map(t => {
+            let mType = t.measure || '';
+            let mDetail = t.measure_detail || '';
+
+            // HEURISTIC FIX:
+            // If database has content in 'measure' column but it's not a known type,
+            // and 'measure_detail' is empty, treat 'measure' as the detail content.
+            if (mType && !knownTypes.includes(mType) && !mDetail) {
+                mDetail = mType;
+                mType = '';
+            }
+
+            return {
+                id: crypto.randomUUID(),
+                step: t.step || '',
+                risk_factor: t.risk_factor || '',
+                risk_factor_detail: t.risk_factor_detail || '',
+                risk_level: t.risk_level || '중',
+                measure: mType,
+                measure_detail: mDetail,
+                residual_risk: t.residual_risk || '하',
+                action_officer: '',
+                checker: ''
+            };
+        });
+    };
+
+    const handleConstructionTypeChange = async (newType: string) => {
+        // If empty type selected, clear everything
+        if (!newType) {
+            setProject(prev => ({ ...prev, construction_type: '', items: [] }));
+            return;
+        }
+
+        try {
+            const res = await fetch(`${API_BASE}/risk-standards?construction_type=${encodeURIComponent(newType)}`);
+            if (!res.ok) throw new Error('Failed to load template');
+            const data: any[] = await res.json();
+
+            if (data.length === 0) {
+                // If no data, just clear items
+                setProject(prev => ({ ...prev, construction_type: newType, items: [] }));
+                return;
+            }
+
+            const newItems = buildItemsFromStandards(data);
+
+            setProject(prev => ({
+                ...prev,
+                construction_type: newType,
+                items: newItems
+            }));
+        } catch (err) {
+            console.error(err);
+            alert('데이터를 불러오는 중 오류가 발생했습니다.');
+        }
+    };
+
+    const isItemEmpty = (item: RiskItem) => {
+        const fields = [
+            item.step,
+            item.risk_factor,
+            item.risk_factor_detail,
+            item.measure,
+            item.measure_detail
+        ];
+        return fields.every(value => !String(value || '').trim());
+    };
 
     // Cascading Filter Logic
     const uniqueSteps = Array.from(new Set(project.items.map(i => i.step).filter(Boolean))).sort();
@@ -150,6 +233,17 @@ function RiskAssessmentEditor() {
 
             // Refresh types in case a new type was added (though we are using existing type here)
             fetchTypes();
+
+            // Reload from DB to reflect actual saved count (dedup applied)
+            const refreshRes = await fetch(`${API_BASE}/risk-standards?construction_type=${encodeURIComponent(project.construction_type)}`);
+            if (refreshRes.ok) {
+                const refreshed = await refreshRes.json();
+                setProject(prev => ({
+                    ...prev,
+                    items: buildItemsFromStandards(refreshed)
+                }));
+                setSelectedIds(new Set());
+            }
 
         } catch (err) {
             console.error(err);
@@ -337,6 +431,15 @@ function RiskAssessmentEditor() {
         };
         reader.readAsBinaryString(file);
 
+        const inferredType = file.name.replace(/\.[^/.]+$/, '').trim();
+        if (inferredType) {
+            setProject(prev => ({
+                ...prev,
+                construction_type: inferredType,
+                updated_at: new Date().toISOString()
+            }));
+        }
+
         if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
@@ -422,67 +525,8 @@ function RiskAssessmentEditor() {
                             <div style={{ display: 'flex', gap: '1.25rem', alignItems: 'center' }}>
                                 <select
                                     className="input"
-                                    value={project.construction_type}
-                                    onChange={async (e) => {
-                                        const newType = e.target.value;
-
-                                        // If empty type selected, clear everything
-                                        if (!newType) {
-                                            setProject(prev => ({ ...prev, construction_type: '', items: [] }));
-                                            return;
-                                        }
-
-                                        // Removed confirmation as per user request
-
-                                        try {
-                                            const res = await fetch(`${API_BASE}/risk-standards?construction_type=${encodeURIComponent(newType)}`);
-                                            if (!res.ok) throw new Error('Failed to load template');
-                                            const data: any[] = await res.json();
-
-                                            if (data.length === 0) {
-                                                // If no data, just clear items
-                                                setProject(prev => ({ ...prev, construction_type: newType, items: [] }));
-                                                return;
-                                            }
-
-                                            const knownTypes = ['지침', '사고', 'HP'];
-
-                                            const newItems = data.map(t => {
-                                                let mType = t.measure || '';
-                                                let mDetail = t.measure_detail || '';
-
-                                                // HEURISTIC FIX: 
-                                                // If database has content in 'measure' column but it's not a known type,
-                                                // and 'measure_detail' is empty, treat 'measure' as the detail content.
-                                                if (mType && !knownTypes.includes(mType) && !mDetail) {
-                                                    mDetail = mType;
-                                                    mType = ''; // Reset type to empty/default
-                                                }
-
-                                                return {
-                                                    id: crypto.randomUUID(),
-                                                    step: t.step || '',
-                                                    risk_factor: t.risk_factor || '',
-                                                    risk_factor_detail: t.risk_factor_detail || '',
-                                                    risk_level: t.risk_level || '중',
-                                                    measure: mType,
-                                                    measure_detail: mDetail,
-                                                    residual_risk: t.residual_risk || '하',
-                                                    action_officer: '',
-                                                    checker: ''
-                                                };
-                                            });
-
-                                            setProject(prev => ({
-                                                ...prev,
-                                                construction_type: newType,
-                                                items: newItems
-                                            }));
-                                        } catch (err) {
-                                            console.error(err);
-                                            alert('데이터를 불러오는 중 오류가 발생했습니다.');
-                                        }
-                                    }}
+                                    value={availableTypes.includes(project.construction_type) ? project.construction_type : ''}
+                                    onChange={(e) => handleConstructionTypeChange(e.target.value)}
                                     style={{ flex: 1, height: '38px' }}
                                 >
                                     <option value="">공종 선택</option>
@@ -500,22 +544,6 @@ function RiskAssessmentEditor() {
                                         border: '1px solid var(--border)'
                                     }}
                                     onClick={() => {
-                                        if (selectedIds.size === 0) {
-                                            const newItem: RiskItem = {
-                                                id: crypto.randomUUID(),
-                                                step: '',
-                                                risk_factor: '',
-                                                risk_factor_detail: '',
-                                                risk_level: '중',
-                                                measure: '',
-                                                measure_detail: '',
-                                                residual_risk: '하',
-                                                action_officer: '',
-                                                checker: ''
-                                            };
-                                            setProject(prev => ({ ...prev, items: [...prev.items, newItem] }));
-                                            setSelectedIds(new Set([newItem.id]));
-                                        }
                                         setViewMode('edit');
                                     }}
                                 >
@@ -539,58 +567,7 @@ function RiskAssessmentEditor() {
                             <select
                                 className="input"
                                 value={project.construction_type}
-                                onChange={async (e) => {
-                                    const newType = e.target.value;
-
-                                    if (!newType) {
-                                        setProject(prev => ({ ...prev, construction_type: '', items: [] }));
-                                        return;
-                                    }
-
-                                    try {
-                                        const res = await fetch(`${API_BASE}/risk-standards?construction_type=${encodeURIComponent(newType)}`);
-                                        if (!res.ok) throw new Error('Failed to load template');
-                                        const data: any[] = await res.json();
-
-                                        if (data.length === 0) {
-                                            setProject(prev => ({ ...prev, construction_type: newType, items: [] }));
-                                            return;
-                                        }
-
-                                        const knownTypes = ['지침', '사고', 'HP'];
-                                        const newItems = data.map(t => {
-                                            let mType = t.measure || '';
-                                            let mDetail = t.measure_detail || '';
-
-                                            if (mType && !knownTypes.includes(mType) && !mDetail) {
-                                                mDetail = mType;
-                                                mType = '';
-                                            }
-
-                                            return {
-                                                id: crypto.randomUUID(),
-                                                step: t.step || '',
-                                                risk_factor: t.risk_factor || '',
-                                                risk_factor_detail: t.risk_factor_detail || '',
-                                                risk_level: t.risk_level || '중',
-                                                measure: mType,
-                                                measure_detail: mDetail,
-                                                residual_risk: t.residual_risk || '하',
-                                                action_officer: '',
-                                                checker: ''
-                                            };
-                                        });
-
-                                        setProject(prev => ({
-                                            ...prev,
-                                            construction_type: newType,
-                                            items: newItems
-                                        }));
-                                    } catch (err) {
-                                        console.error(err);
-                                        alert('데이터를 불러오는 중 오류가 발생했습니다.');
-                                    }
-                                }}
+                                onChange={(e) => handleConstructionTypeChange(e.target.value)}
                                 style={{
                                     minWidth: '200px',
                                     height: '38px',
@@ -600,7 +577,7 @@ function RiskAssessmentEditor() {
                                 }}
                             >
                                 <option value="">공종 선택</option>
-                                {availableTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                                {getAvailableTypesWithCurrent().map(t => <option key={t} value={t}>{t}</option>)}
                             </select>
                             {project.construction_type && (
                                 <button
@@ -691,6 +668,8 @@ function RiskAssessmentEditor() {
                         <button
                             className="btn-secondary"
                             onClick={() => {
+                                const cleanedItems = project.items.filter(item => !isItemEmpty(item));
+                                setProject(prev => ({ ...prev, items: cleanedItems }));
                                 setViewMode('list');
                                 setSelectedIds(new Set()); // Reset selections on complete
                             }}
