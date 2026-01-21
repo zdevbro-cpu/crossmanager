@@ -1,0 +1,5 @@
+{
+  "name": "BranchFinder AI",
+  "description": "A smart map dashboard visualizing branch locations with an embedded Gemini AI assistant for location-based queries.",
+  "requestFramePermissions": []
+}
