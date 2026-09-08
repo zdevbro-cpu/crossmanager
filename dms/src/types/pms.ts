@@ -140,6 +140,7 @@ export interface PmsDocument {
   lockedBy?: string
   lockedAt?: string
   lockedByName?: string
+  isCheckedOut?: boolean
 
   // From Join
   filePath?: string

@@ -228,7 +228,7 @@ app.get(['/api/docview/:id/:filename', '/api/docview/:id'], async (req, res) => 
 
         // Robust Query: Get the latest version's file info
         const query = `
-            SELECT v.file_path, v.file_content, d.name
+            SELECT v.file_path, v.file_content, v.storage_kind, v.drive_file_id, d.name
             FROM documents d
             JOIN document_versions v ON d.id = v.document_id
             WHERE d.id = $1
@@ -358,7 +358,7 @@ app.get('/api/docview/html/:id', async (req, res) => {
     try {
         const { id } = req.params
         const query = `
-            SELECT v.file_path, v.file_content, d.name
+            SELECT v.file_path, v.file_content, v.storage_kind, v.drive_file_id, d.name
             FROM documents d
             JOIN document_versions v ON d.id = v.document_id
             WHERE d.id = $1
@@ -535,7 +535,7 @@ app.get('/api/docview/html/:id', async (req, res) => {
         }
 
         const query = `
-            SELECT v.file_path, v.file_content, d.name
+            SELECT v.file_path, v.file_content, v.storage_kind, v.drive_file_id, d.name
             FROM documents d
             JOIN document_versions v ON d.id = v.document_id
             WHERE d.id = $1
@@ -621,7 +621,7 @@ app.get(['/api/docview/:id/:filename', '/api/docview/:id'], async (req, res) => 
         console.log(`[Index.js View] Request for doc id: ${id}`)
 
         const query = `
-            SELECT v.file_path, v.file_content, d.name
+            SELECT v.file_path, v.file_content, v.storage_kind, v.drive_file_id, d.name
             FROM documents d
             JOIN document_versions v ON d.id = v.document_id
             WHERE d.id = $1
@@ -700,7 +700,7 @@ app.get('/api/download/:id', async (req, res) => {
         }
 
         const query = `
-            SELECT v.file_path, v.file_content, d.name
+            SELECT v.file_path, v.file_content, v.storage_kind, v.drive_file_id, d.name
             FROM documents d
             JOIN document_versions v ON d.id = v.document_id
             WHERE d.id = $1
@@ -713,6 +713,25 @@ app.get('/api/download/:id', async (req, res) => {
         if (resDb.rows.length === 0) return res.status(404).send('Document not found')
 
         const row = resDb.rows[0]
+
+        // 드라이브 문서는 링크를 내주지 않고 서버가 중계한다(설계서 9.4).
+        // 링크를 그대로 주면 앱을 거치지 않은 열람이 생겨 기록이 빈다.
+        const gid = row.drive_file_id || (row.storage_kind === 'gdrive' ? row.file_path : null)
+        if (gid) {
+            try {
+                const gdrive = require('./lib/drive')
+                const { stream, mimeType } = await gdrive.downloadFromDrive(gid)
+                const encoded = encodeURIComponent(row.name || 'document')
+                res.setHeader('Content-Type', mimeType || 'application/octet-stream')
+                res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encoded}`)
+                return stream.pipe(res)
+            } catch (e) {
+                console.warn('[download] 드라이브 실패:', e.message)
+                return res.status(502).send('드라이브에서 파일을 가져오지 못했습니다.')
+            }
+        }
+
+        // --- 이하는 기존 Firebase Storage 문서용. 그대로 유지한다. ---
         const filePath = row.file_path
         const fileContent = row.file_content
         const docName = row.name || 'Document'
@@ -750,12 +769,17 @@ app.get('/api/download/:id', async (req, res) => {
 // Correct Mount for Documents Router
 app.use('/api/documents', createDocumentsRouter(pool, uploadsDir))
 
+// Core 마스터 · SMS 라이브러리 (설계서 M0~M3)
+const { createMasterRouter } = require('./routes/master')
+app.use('/api/master', createMasterRouter(pool))
+
 // ------------------------------------------
 // DMS/PMS Support Routes
 // ------------------------------------------
 app.get('/api/projects', async (req, res) => {
     try {
-        const { rows } = await pool.query('SELECT id, code, name, status FROM projects ORDER BY name ASC');
+        // 본사(is_hq)는 현장이 아니므로 프로젝트 목록에서 제외한다.
+        const { rows } = await pool.query('SELECT id, code, name, status, is_hq FROM projects WHERE is_hq = FALSE ORDER BY name ASC');
         res.json(rows);
     } catch (err) {
         console.error('[DB] Fetch projects error:', err);
@@ -1438,7 +1462,8 @@ app.delete('/api/users/:uid', async (req, res) => {
 // --- Projects API ---
 app.get('/api/projects', async (req, res) => {
     try {
-        const { rows } = await pool.query('SELECT * FROM projects ORDER BY name')
+        // 본사(is_hq)는 현장이 아니므로 프로젝트 목록에서 제외한다.
+        const { rows } = await pool.query('SELECT * FROM projects WHERE is_hq = FALSE ORDER BY name')
         res.json(rows)
     } catch (err) {
         console.error(err)

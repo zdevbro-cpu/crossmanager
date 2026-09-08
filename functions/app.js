@@ -173,7 +173,7 @@ app.get(['/api/docview/:id/:filename', '/api/docview/:id'], async (req, res) => 
 
         // Robust Query: Get the latest version's file info
         const query = `
-            SELECT v.file_path, v.file_content, d.name
+            SELECT v.file_path, v.file_content, v.storage_kind, v.drive_file_id, d.name
             FROM documents d
             JOIN document_versions v ON d.id = v.document_id
             WHERE d.id = $1
@@ -303,7 +303,7 @@ app.get(['/api/docview/versions/:versionId/:filename', '/api/docview/versions/:v
         console.log(`[App.js View Version] Request for version id: ${versionId}`)
 
         const query = `
-            SELECT v.file_path, v.file_content, d.name, v.version
+            SELECT v.file_path, v.file_content, v.storage_kind, v.drive_file_id, d.name, v.version
             FROM document_versions v
             JOIN documents d ON v.document_id = d.id
             WHERE v.id = $1
@@ -408,6 +408,10 @@ app.get(['/api/docview/versions/:versionId/:filename', '/api/docview/versions/:v
 // so that Multer can handle multipart/form-data streams first.
 const documentsRouter = createDocumentsRouter(pool, uploadsDir)
 app.use('/api/documents', documentsRouter)
+
+// Core 마스터 · SMS 라이브러리 (설계서 M0~M3)
+const { createMasterRouter } = require('./routes/master')
+app.use('/api/master', createMasterRouter(pool))
 
 // SMS Standards API
 try {
@@ -1470,7 +1474,8 @@ app.delete('/api/contracts/:id', async (req, res) => {
 // --- Projects API ---
 app.get('/api/projects', async (req, res) => {
     try {
-        const { rows } = await pool.query('SELECT * FROM projects ORDER BY name')
+        // 본사(is_hq)는 현장이 아니므로 프로젝트 목록에서 제외한다.
+        const { rows } = await pool.query('SELECT * FROM projects WHERE is_hq = FALSE ORDER BY name')
         res.json(rows)
     } catch (err) {
         console.error(err)
@@ -2902,7 +2907,7 @@ app.get('/api/download/:id', async (req, res) => {
             return res.status(400).send('Invalid document ID')
         }
         const resDb = await pool.query(`
-            SELECT v.file_path, v.file_content, d.name
+            SELECT v.file_path, v.file_content, v.storage_kind, v.drive_file_id, d.name
             FROM documents d
             JOIN document_versions v ON d.id = v.document_id
             WHERE d.id = $1
@@ -2912,6 +2917,24 @@ app.get('/api/download/:id', async (req, res) => {
         if (!resDb.rows.length) return res.status(404).send('Document not found')
 
         const row = resDb.rows[0]
+
+        // 드라이브 문서는 링크를 내주지 않고 서버가 중계한다(설계서 9.4).
+        const gid = row.drive_file_id || (row.storage_kind === 'gdrive' ? row.file_path : null)
+        if (gid) {
+            try {
+                const gdrive = require('./lib/drive')
+                const { stream, mimeType } = await gdrive.downloadFromDrive(gid)
+                const encoded = encodeURIComponent(row.name || 'document')
+                res.setHeader('Content-Type', mimeType || 'application/octet-stream')
+                res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encoded}`)
+                return stream.pipe(res)
+            } catch (e) {
+                console.warn('[download] 드라이브 실패:', e.message)
+                return res.status(502).send('드라이브에서 파일을 가져오지 못했습니다.')
+            }
+        }
+
+        // --- 이하는 기존 Firebase Storage 문서용 ---
         const filePath = row.file_path
         const docName = row.name || 'document'
         const ext = require('path').extname(filePath || docName).toLowerCase()

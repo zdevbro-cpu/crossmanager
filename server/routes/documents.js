@@ -4,6 +4,24 @@ const path = require('path')
 const fs = require('fs')
 const admin = require('firebase-admin')
 const { validate: isUuid } = require('uuid')
+const gdrive = require('../lib/drive')
+
+// 문서 실물은 드라이브, 링크·메타는 DB (상세설계서 v0.2).
+// 기존 Firebase Storage 문서는 다운로드 폴백을 그대로 남긴다.
+const HQ_PROJECT_ID = '00000000-0000-0000-0000-000000000001'
+
+// 민감문서 열람·다운로드 기록 (설계서 9.4). 실패해도 본 요청을 막지 않는다.
+async function recordAccess(pool, { documentId, action, req }) {
+    try {
+        await pool.query(
+            `INSERT INTO document_access_log (document_id, action, ip, user_agent)
+             VALUES ($1, $2, $3, $4)`,
+            [documentId, action, req.ip || null, req.headers['user-agent'] || null]
+        )
+    } catch (e) {
+        console.warn('[access_log] 기록 실패:', e.message)
+    }
+}
 
 function resolveBucketName() {
     if (process.env.FIREBASE_STORAGE_BUCKET) return process.env.FIREBASE_STORAGE_BUCKET
@@ -102,35 +120,33 @@ const createDocumentsRouter = (pool, uploadsDir) => {
                 fields[fieldname] = val
             })
 
+                        // 파일을 메모리에 모은다. 디스크에 쓰고 다시 읽으면 busboy 의 finish 가
+            // 쓰기 완료보다 먼저 나서 0바이트 파일을 올리게 된다.
+            let fileDone = null
+
             busboy.on('file', (fieldname, file, info) => {
                 const { filename, encoding, mimeType } = info
-
-                // With defParamCharset: 'utf8', filename is usually correct.
-                // If it still breaks, we might need a conditional check, but standard Fetch + Busboy works with utf8 option.
-                const safeFilename = filename
-
-                const saveName = `${Date.now()}-${safeFilename}`
-                const savePath = path.join(uploadsDir, saveName)
-
                 fileData = {
-                    originalName: safeFilename,
-                    encoding,
-                    mimeType,
-                    filename: saveName,
-                    path: savePath,
-                    size: 0
+                    originalName: filename, encoding, mimeType,
+                    filename: `${Date.now()}-${filename}`, buffer: null, size: 0
                 }
-
-                const writeStream = fs.createWriteStream(savePath)
-                file.pipe(writeStream)
-
-                writeStream.on('finish', () => {
-                    fileData.size = writeStream.bytesWritten
+                const chunks = []
+                fileDone = new Promise((res, rej) => {
+                    file.on('data', (c) => chunks.push(c))
+                    file.on('end', () => {
+                        fileData.buffer = Buffer.concat(chunks)
+                        fileData.size = fileData.buffer.length
+                        res()
+                    })
+                    file.on('error', rej)
                 })
             })
 
-            busboy.on('finish', () => {
-                resolve({ fields, file: fileData })
+            busboy.on('finish', async () => {
+                try {
+                    if (fileDone) await fileDone
+                    resolve({ fields, file: fileData })
+                } catch (e) { reject(e) }
             })
 
             busboy.on('error', (err) => reject(err))
@@ -158,43 +174,18 @@ const createDocumentsRouter = (pool, uploadsDir) => {
 
             const { projectId, category, subCategory, type, name, status, securityLevel, metadata } = fields
             // Fix projectId "null" string issue
-            const pId = (projectId === 'null' || !projectId) ? null : projectId
+            // 현장이 지정되지 않은 문서는 본사 문서로 둔다.
+            const pId = (projectId === 'null' || !projectId) ? HQ_PROJECT_ID : projectId
 
-            // --- Upload to Firebase Storage or Local Fallback ---
-            // --- Upload to Firebase Storage or Local Fallback ---
-            const destination = `documents/${pId || 'global'}/${file.filename}`
-            let dbFilePath = destination
-            let uploadedToCloud = false
-            let fileContentBase64 = null
-
-            if (bucket) {
-                try {
-                    await bucket.upload(file.path, {
-                        destination: destination,
-                        metadata: {
-                            contentType: file.mimeType,
-                        }
-                    })
-                    uploadedToCloud = true
-                    // Remove temp file only if uploaded to bucket
-                    try { fs.unlinkSync(file.path) } catch (e) { }
-                } catch (e) {
-                    console.warn(`Storage Upload Failed (will keep local file): ${e.message}`)
-                }
-            }
-
-            if (!uploadedToCloud) {
-                // console.warn("Skipping Storage Upload or Failed, keeping file locally.")
-                dbFilePath = file.filename
-                try {
-                    fileContentBase64 = fs.readFileSync(file.path).toString('base64')
-                    try { fs.unlinkSync(file.path) } catch (e) { }
-                } catch (e) {
-                    console.warn('Failed to read local file for DB fallback:', e.message)
-                }
-            }
-            // ----------------------------------
-            // ----------------------------------
+            // --- 드라이브 업로드 ---
+            // 파일 실물은 드라이브에만 둔다. base64 로 DB 에 넣던 폴백은 폐기했다.
+            const up = await gdrive.uploadToDrive({
+                buffer: file.buffer,
+                fileName: file.originalName || file.filename,
+                mimeType: file.mimeType
+            })
+            const driveFileId = up.driveFileId
+            const dbFilePath = up.driveFileId   // file_path 는 NOT NULL. 드라이브 ID 를 보관한다.
 
             await client.query('BEGIN')
 
@@ -211,9 +202,9 @@ const createDocumentsRouter = (pool, uploadsDir) => {
             // Insert into document_versions table
             await client.query(`
         INSERT INTO document_versions (
-          document_id, version, file_path, file_size, change_log, file_content
-        ) VALUES ($1, 'v1', $2, $3, 'Initial upload', $4)
-      `, [docId, dbFilePath, file.size, fileContentBase64])
+          document_id, version, file_path, file_size, change_log, storage_kind, drive_file_id
+        ) VALUES ($1, 'v1', $2, $3, 'Initial upload', 'gdrive', $4)
+      `, [docId, dbFilePath, file.size, driveFileId])
 
             await client.query('COMMIT')
 
@@ -272,49 +263,25 @@ const createDocumentsRouter = (pool, uploadsDir) => {
                 nextVer = `v${currentNum + 1}`
             }
 
-            // --- Upload to Firebase Storage or Local Fallback ---
-            // --- Upload to Firebase Storage or Local Fallback ---
-            const destination = `documents/${docRes.rows[0].project_id || 'global'}/${file.filename}`
-            let dbFilePath = destination
-            let uploadedToCloud = false
-            let fileContentBase64 = null
-
-            if (bucket) {
-                try {
-                    await bucket.upload(file.path, {
-                        destination: destination,
-                        metadata: {
-                            contentType: file.mimeType,
-                        }
-                    })
-                    uploadedToCloud = true
-                    try { fs.unlinkSync(file.path) } catch (e) { }
-                } catch (e) {
-                    console.warn(`Storage Upload Failed (will keep local file): ${e.message}`)
-                }
-            }
-
-            if (!uploadedToCloud) {
-                // Fallback
-                dbFilePath = file.filename
-                try {
-                    fileContentBase64 = fs.readFileSync(file.path).toString('base64')
-                    try { fs.unlinkSync(file.path) } catch (e) { }
-                } catch (e) {
-                    console.warn('Failed to read local file for DB fallback:', e.message)
-                }
-            }
-            // ----------------------------------
-            // ----------------------------------
+            // --- 드라이브 업로드 ---
+            // 버전마다 별도 파일을 만든다. 드라이브 리비전은 keepForever 미지정 시
+            // 30일 후 자동 삭제되고 지정해도 200개가 상한이라 과거 버전이 사라진다.
+            const up = await gdrive.uploadToDrive({
+                buffer: file.buffer,
+                fileName: file.originalName || file.filename,
+                mimeType: file.mimeType
+            })
+            const driveFileId = up.driveFileId
+            const dbFilePath = up.driveFileId
 
             await client.query('BEGIN')
 
             // Insert version
             await client.query(`
         INSERT INTO document_versions (
-          document_id, version, file_path, file_size, change_log, file_content
-        ) VALUES ($1, $2, $3, $4, $5, $6)
-      `, [id, nextVer, dbFilePath, file.size, changeLog, fileContentBase64])
+          document_id, version, file_path, file_size, change_log, storage_kind, drive_file_id
+        ) VALUES ($1, $2, $3, $4, $5, 'gdrive', $6)
+      `, [id, nextVer, dbFilePath, file.size, changeLog, driveFileId])
 
             // Update document current_version
             await client.query(`
@@ -350,14 +317,24 @@ const createDocumentsRouter = (pool, uploadsDir) => {
             const params = []
             const conditions = []
 
+            // 논리 삭제된 문서는 제외한다. 현장 문서는 레퍼런스라 물리 삭제하지 않는다.
+            conditions.push('d.deleted_at IS NULL')
+
             const { 
                 projectId, category, subCategory, type, search, 
                 client, projectYear, status, officialName, tags, productionDate 
             } = req.query
 
             if (projectId) {
-                conditions.push(`d.project_id = $${params.length + 1}`)
-                params.push(projectId)
+                // 자격증·사업자등록증·MSDS 처럼 현장에 매이지 않는 문서는 본사에 1건만 둔다.
+                // includeHq=true 면 현장 문서와 본사 문서를 합쳐서 돌려준다.
+                if (String(req.query.includeHq) === 'true' && projectId !== HQ_PROJECT_ID) {
+                    conditions.push(`d.project_id IN ($${params.length + 1}, $${params.length + 2})`)
+                    params.push(projectId, HQ_PROJECT_ID)
+                } else {
+                    conditions.push(`d.project_id = $${params.length + 1}`)
+                    params.push(projectId)
+                }
             }
             if (category) {
                 conditions.push(`d.category = $${params.length + 1}`)
@@ -668,34 +645,22 @@ const createDocumentsRouter = (pool, uploadsDir) => {
             const docRes = await client.query('SELECT project_id FROM documents WHERE id = $1', [id])
             if (!docRes.rows.length) throw new Error('Document not found')
 
-            // Upload file
-            const destination = `documents/${docRes.rows[0].project_id || 'global'}/${file.filename}`
-            let dbFilePath = destination
-            let uploadedToCloud = false
-            let fileContentBase64 = null
-
-            if (bucket) {
-                try {
-                    await bucket.upload(file.path, { destination, metadata: { contentType: file.mimeType } })
-                    uploadedToCloud = true
-                    try { fs.unlinkSync(file.path) } catch (e) { }
-                } catch (e) {
-                    console.warn('Storage upload failed:', e.message)
-                }
-            }
-            if (!uploadedToCloud) {
-                dbFilePath = file.filename
-                try {
-                    fileContentBase64 = fs.readFileSync(file.path).toString('base64')
-                    try { fs.unlinkSync(file.path) } catch (e) { }
-                } catch (e) { }
-            }
+            // --- 드라이브 업로드 ---
+            // 버전마다 별도 파일을 만든다. 드라이브 리비전은 keepForever 미지정 시
+            // 30일 후 자동 삭제되고 지정해도 200개가 상한이라 과거 버전이 사라진다.
+            const up = await gdrive.uploadToDrive({
+                buffer: file.buffer,
+                fileName: file.originalName || file.filename,
+                mimeType: file.mimeType
+            })
+            const driveFileId = up.driveFileId
+            const dbFilePath = up.driveFileId
 
             await client.query('BEGIN')
             await client.query(`
-                INSERT INTO document_versions (document_id, version, file_path, file_size, change_log, file_content)
-                VALUES ($1, $2, $3, $4, $5, $6)
-            `, [id, version.trim(), dbFilePath, file.size, changeLog || '', fileContentBase64])
+                INSERT INTO document_versions (document_id, version, file_path, file_size, change_log, storage_kind, drive_file_id)
+                VALUES ($1, $2, $3, $4, $5, 'gdrive', $6)
+            `, [id, version.trim(), dbFilePath, file.size, changeLog || '', driveFileId])
 
             await client.query(`
                 UPDATE documents SET
@@ -814,9 +779,23 @@ const createDocumentsRouter = (pool, uploadsDir) => {
         const client = await pool.connect()
         try {
             await client.query('BEGIN')
-            // Versions must be deleted first due to FK
-            await client.query('DELETE FROM document_versions WHERE document_id = $1', [id])
-            await client.query('DELETE FROM documents WHERE id = $1', [id])
+
+            // 현장 문서는 레퍼런스이므로 물리 삭제하지 않는다(설계서 1.4.2).
+            // 레코드는 deleted_at 으로만 감추고, 드라이브 파일은 휴지통으로 보내
+            // 잘못 지운 경우 되살릴 수 있게 한다.
+            const verRes = await client.query(
+                'SELECT drive_file_id FROM document_versions WHERE document_id = $1', [id])
+            for (const row of verRes.rows) {
+                if (!row.drive_file_id) continue
+                try {
+                    await gdrive.trashInDrive(row.drive_file_id)
+                } catch (e) {
+                    console.warn('[삭제] 드라이브 휴지통 이동 실패:', e.message)
+                }
+            }
+
+            await client.query(
+                'UPDATE documents SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL', [id])
             await client.query('COMMIT')
             res.json({ message: 'Document deleted successfully' })
         } catch (err) {
