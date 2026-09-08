@@ -4,12 +4,12 @@
   "license": "UNLICENSED",
   "scripts": {
     "dev:all": "concurrently \"npm run server\" \"npm run portal\" \"npm run pms\" \"npm run ems\" \"npm run swms\" \"npm run sms\" \"npm run dms\"",
-    "server": "cd Server && node index.js",
+    "server": "cd functions && node app.js",
     "portal": "cd Portal && npm run dev",
-    "pms": "cd PMS && npm run dev",
-    "ems": "cd EMS && npm run dev",
-    "swms": "cd SWMS && npm run dev",
-    "sms": "cd SMS && npm run dev",
+    "pms": "cd pms && npm run dev",
+    "ems": "cd ems && npm run dev",
+    "swms": "cd swms && npm run dev",
+    "sms": "cd sms && npm run dev",
     "dms": "cd dms && npm run dev"
   },
   "dependencies": {

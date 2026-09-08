@@ -106,7 +106,7 @@ export default function Dashboard() {
                 </div>
                 <button onClick={handleLogout} className="logout-button">
                     <LogOut size={18} />
-                    로그아웃
+                    Sign Out
                 </button>
             </header>
 

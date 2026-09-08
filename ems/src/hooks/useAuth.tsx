@@ -28,8 +28,11 @@ const getPortalLoginUrl = () => {
 }
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-  const [user, setUser] = useState<any>(() => {
-    // 1. Try SSO first (High Priority)
+  const [user, setUser] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    // SSO Check
     const params = new URLSearchParams(window.location.search)
     const ssoUserStr = params.get('sso_user')
     const STORAGE_KEY = 'ems-local-user'
@@ -45,40 +48,26 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           mock: true
         }
         localStorage.setItem(STORAGE_KEY, JSON.stringify(localUser))
+        setUser(localUser)
+        setLoading(false)
         window.history.replaceState({}, '', window.location.pathname)
-        return localUser
+        return
       } catch (e) {
         console.error('SSO Login Failed:', e)
       }
     }
 
-    // 2. Try Local Storage
     if (!auth) {
       const stored = localStorage.getItem(STORAGE_KEY)
       if (stored) {
-        return JSON.parse(stored)
+        setUser(JSON.parse(stored))
       }
-    }
-    return null
-  })
-
-  const [loading, setLoading] = useState(!user && !!auth)
-
-  useEffect(() => {
-    if (!auth) {
       setLoading(false)
       return
     }
 
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
-      if (u) {
-        setUser(u)
-      } else {
-        const isLocalMock = user && user.mock
-        if (!isLocalMock) {
-          setUser(null)
-        }
-      }
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setUser(user)
       setLoading(false)
     })
     return unsubscribe
@@ -94,8 +83,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     if (auth) {
       await firebaseSignOut(auth)
     }
-    localStorage.removeItem('ems-local-user')
-    window.location.replace(`${getPortalLoginUrl()}?action=logout`)
+    window.location.replace(getPortalLoginUrl())
   }
 
   return (

@@ -49,14 +49,6 @@ const createDocumentsRouter = (pool, uploadsDir) => {
     fs.mkdirSync(uploadsDir, { recursive: true })
   }
 
-  // Migration: add checkout lock columns if not present
-  pool.query(`
-    ALTER TABLE documents
-    ADD COLUMN IF NOT EXISTS locked_by TEXT,
-    ADD COLUMN IF NOT EXISTS locked_at TIMESTAMP,
-    ADD COLUMN IF NOT EXISTS locked_by_name TEXT
-  `).catch(e => console.warn('[Migration] lock columns:', e.message))
-
   // Request splitting/logging
   router.use((req, _res, next) => {
     // console.log('[documents]', req.method, req.url) // Optional verbose logging
@@ -527,25 +519,22 @@ const createDocumentsRouter = (pool, uploadsDir) => {
 
   router.patch('/:id', async (req, res) => {
     const { id } = req.params
-    const { status, securityLevel, name, category, subCategory, type, metadata: metaUpdates } = req.body
+    const { status, securityLevel, name } = req.body
 
     const updates = []
     const params = [id]
 
-    if (status) { params.push(status); updates.push(`status = $${params.length}`) }
-    if (securityLevel) { params.push(securityLevel); updates.push(`security_level = $${params.length}`) }
-    if (name) { params.push(name); updates.push(`name = $${params.length}`) }
-    if (category) { params.push(category); updates.push(`category = $${params.length}`) }
-    if (subCategory) { params.push(subCategory); updates.push(`sub_category = $${params.length}`) }
-    if (type) { params.push(type); updates.push(`type = $${params.length}`) }
-
-    if (metaUpdates) {
-      try {
-        const current = await pool.query('SELECT metadata FROM documents WHERE id = $1', [id])
-        const newMetadata = { ...(current.rows[0]?.metadata || {}), ...(subCategory ? { folderId: subCategory } : {}), ...metaUpdates }
-        params.push(JSON.stringify(newMetadata))
-        updates.push(`metadata = $${params.length}`)
-      } catch (e) { console.warn('metadata merge error:', e.message) }
+    if (status) {
+      params.push(status)
+      updates.push(`status = $${params.length}`)
+    }
+    if (securityLevel) {
+      params.push(securityLevel)
+      updates.push(`security_level = $${params.length}`)
+    }
+    if (name) {
+      params.push(name)
+      updates.push(`name = $${params.length}`)
     }
 
     if (updates.length === 0) return res.json({ message: 'No changes provided' })
@@ -556,121 +545,6 @@ const createDocumentsRouter = (pool, uploadsDir) => {
     } catch (err) {
       console.error(err)
       res.status(500).json({ error: 'Failed to update document' })
-    }
-  })
-
-  // Checkout Document (lock)
-  router.post('/:id/checkout', async (req, res) => {
-    const { id } = req.params
-    const { userId, userName } = req.body
-    try {
-      const docRes = await pool.query('SELECT locked_by, locked_by_name FROM documents WHERE id = $1', [id])
-      if (!docRes.rows.length) return res.status(404).json({ error: 'Document not found' })
-      const doc = docRes.rows[0]
-      if (doc.locked_by && doc.locked_by !== (userId || 'system')) {
-        return res.status(409).json({ error: `이미 "${doc.locked_by_name || doc.locked_by}"님이 체크아웃 중입니다.` })
-      }
-      await pool.query(
-        'UPDATE documents SET locked_by = $1, locked_at = NOW(), locked_by_name = $2, updated_at = NOW() WHERE id = $3',
-        [userId || 'system', userName || '담당자', id]
-      )
-      res.json({ message: 'Checked out successfully' })
-    } catch (err) {
-      console.error('Checkout error:', err)
-      res.status(500).json({ error: 'Checkout failed', details: err.message })
-    }
-  })
-
-  // Checkin Document (upload new version + unlock)
-  router.post('/:id/checkin', async (req, res) => {
-    const { id } = req.params
-    const client = await pool.connect()
-    let uploadedFile = null
-    try {
-      const { fields, file } = await processUpload(req)
-      uploadedFile = file
-      const { version, status, changeLog } = fields
-      if (!file) throw new Error('파일을 첨부해주세요.')
-      if (!version || !version.trim()) throw new Error('버전 번호를 입력해주세요.')
-
-      const docRes = await client.query('SELECT project_id FROM documents WHERE id = $1', [id])
-      if (!docRes.rows.length) throw new Error('Document not found')
-
-      const destination = `documents/${docRes.rows[0].project_id || 'global'}/${file.filename}`
-      let dbFilePath = destination
-      let uploadedToCloud = false
-      let fileContentBase64 = null
-
-      if (bucket) {
-        try {
-          await bucket.upload(file.path, { destination, metadata: { contentType: file.mimeType } })
-          uploadedToCloud = true
-          try { fs.unlinkSync(file.path) } catch (e) { }
-        } catch (e) {
-          console.warn('Storage upload failed:', e.message)
-        }
-      }
-      if (!uploadedToCloud) {
-        dbFilePath = file.filename
-        try {
-          fileContentBase64 = fs.readFileSync(file.path).toString('base64')
-          try { fs.unlinkSync(file.path) } catch (e) { }
-        } catch (e) { }
-      }
-
-      await client.query('BEGIN')
-      await client.query(`
-        INSERT INTO document_versions (document_id, version, file_path, file_size, change_log, file_content)
-        VALUES ($1, $2, $3, $4, $5, $6)
-      `, [id, version.trim(), dbFilePath, file.size, changeLog || '', fileContentBase64])
-
-      await client.query(`
-        UPDATE documents SET
-          current_version = $1,
-          status = $2,
-          locked_by = NULL,
-          locked_at = NULL,
-          locked_by_name = NULL,
-          updated_at = NOW()
-        WHERE id = $3
-      `, [version.trim(), status || 'DRAFT', id])
-
-      await client.query('COMMIT')
-      res.json({ message: 'Checked in successfully', version: version.trim() })
-    } catch (err) {
-      await client.query('ROLLBACK')
-      if (uploadedFile && fs.existsSync(uploadedFile.path)) {
-        try { fs.unlinkSync(uploadedFile.path) } catch (e) { }
-      }
-      console.error('Checkin error:', err)
-      res.status(500).json({ error: err.message || 'Checkin failed' })
-    } finally {
-      client.release()
-    }
-  })
-
-  // Force Unlock
-  router.delete('/:id/lock', async (req, res) => {
-    const { id } = req.params
-    try {
-      await pool.query('UPDATE documents SET locked_by = NULL, locked_at = NULL, locked_by_name = NULL WHERE id = $1', [id])
-      res.json({ message: 'Unlocked successfully' })
-    } catch (err) {
-      res.status(500).json({ error: 'Unlock failed' })
-    }
-  })
-
-  // Get Version History
-  router.get('/:id/versions', async (req, res) => {
-    const { id } = req.params
-    try {
-      const { rows } = await pool.query(
-        'SELECT id, version, file_path, file_size, change_log, created_at FROM document_versions WHERE document_id = $1 ORDER BY created_at DESC',
-        [id]
-      )
-      res.json(rows)
-    } catch (err) {
-      res.status(500).json({ error: 'Failed to fetch version history' })
     }
   })
 

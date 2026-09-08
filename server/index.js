@@ -3,20 +3,22 @@
 const express = require('express')
 const cors = require('cors')
 const multer = require('multer')
+const { Pool } = require('pg')
 const path = require('path')
 const fs = require('fs')
-const mammoth = require('mammoth')
-const xlsx = require('xlsx')
-const { validate: isUuid } = require('uuid')
 
-// Priority Load: .env.local -> env_customer.env -> Default .env
-const localEnvPath = path.join(__dirname, '.env.local')
+const app = express()
+app.use(cors())
+app.use(express.json())
+
+const PORT = process.env.PORT || 3000
+const uploadsDir = path.join(__dirname, 'uploads')
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true })
+const upload = multer({ dest: uploadsDir })
+
+// Priority Load: Customer Env -> Default Env
 const customerEnvPath = path.join(__dirname, 'env_customer.env')
-
-if (fs.existsSync(localEnvPath)) {
-    require('dotenv').config({ path: localEnvPath })
-    console.log('[Config] Loaded .env.local (Dev Environment)')
-} else if (fs.existsSync(customerEnvPath)) {
+if (fs.existsSync(customerEnvPath)) {
     require('dotenv').config({ path: customerEnvPath })
     console.log('[Config] Loaded env_customer.env')
 } else {
@@ -24,68 +26,7 @@ if (fs.existsSync(localEnvPath)) {
     console.log('[Config] Loaded default .env')
 }
 
-const { Pool } = require('pg')
-
-const app = express()
-const PORT = process.env.PORT || 3000
-
-// Ensure uploads directory exists
-const uploadsDir = path.join(__dirname, 'uploads')
-if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true })
-}
-
-// Configure multer for file uploads
-const storage = multer.diskStorage({
-    destination: function (req, file, cb) {
-        cb(null, uploadsDir)
-    },
-    filename: function (req, file, cb) {
-        // Generate unique filename: timestamp-originalname
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9)
-        cb(null, uniqueSuffix + '-' + file.originalname)
-    }
-})
-
-const upload = multer({
-    storage: storage,
-    limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
-})
-
-app.use(cors())
-app.use((req, res, next) => {
-    console.log('Global Middleware:', req.method, req.url)
-    next()
-})
-app.use(express.json({ limit: '50mb' }))
-app.use(express.urlencoded({ limit: '50mb', extended: true }))
-// Serve uploaded files
-app.use('/uploads', express.static(uploadsDir))
-
-// Custom route for direct file access if static middleware fails or for specific handling
-app.get('/api/file-proxy/:filename', (req, res) => {
-    const filename = req.params.filename
-    const filePath = path.join(uploadsDir, filename)
-    if (fs.existsSync(filePath)) {
-        res.sendFile(filePath)
-    } else {
-        res.status(404).send('File not found')
-    }
-})
-
-// Routes
-const contractsRouter = require('./routes/contracts')
-const { createDocumentsRouter } = require('./routes/documents')
-const { createDashboardRouter } = require('./routes/dashboard')
-
-
-app.get('/api/test', (req, res) => res.json({ msg: 'Test works' }))
-// ------------------------------------------
-// ------------------------------------------
-// EMERGENCY FIX: View Routes prioritized in index.js to avoid router conflicts
-// ------------------------------------------
-
-// Database Configuration
+// Database Configuration (Moved to top to prevent ReferenceError)
 const dbConfig = {
     user: process.env.DB_USER,
     database: process.env.DB_NAME,
@@ -95,26 +36,38 @@ const dbConfig = {
 }
 
 // Socket support for Cloud SQL
-// Connection preference:
-// 1) Cloud SQL Unix socket on GCP or when USE_CLOUD_SQL_SOCKET=true
-// 2) TCP(DB_HOST) locally or when FORCE_TCP=true
 const runningOnGcp = !!(process.env.K_SERVICE || process.env.FUNCTION_TARGET)
 const preferSocket = process.env.FORCE_TCP !== 'true' && (process.env.USE_CLOUD_SQL_SOCKET === 'true' || runningOnGcp)
 
 if (preferSocket && process.env.DB_HOST && process.env.DB_HOST.startsWith('/cloudsql')) {
     dbConfig.host = process.env.DB_HOST
-    console.log('[DB] Using Cloud SQL Socket:', dbConfig.host)
 } else {
-    // Local / TCP
     const tcpHost = String(dbConfig.host || '').toLowerCase()
     const isLocalProxy = tcpHost === '127.0.0.1' || tcpHost === 'localhost'
     if (!isLocalProxy) {
         dbConfig.ssl = { rejectUnauthorized: false }
     }
-    console.log('[DB] Using TCP Connection:', dbConfig.host, dbConfig.port)
 }
 
 const pool = new Pool(dbConfig)
+
+// Routes
+const contractsRouter = require('./routes/contracts')
+const { createDocumentsRouter } = require('./routes/documents')
+const { createDashboardRouter } = require('./routes/dashboard')
+
+
+app.get('/api/test', (req, res) => res.json({ msg: 'Test works' }))
+app.get('/api/debug-db', (req, res) => {
+    res.json({
+        database: dbConfig.database,
+        user: dbConfig.user,
+        host: dbConfig.host,
+        port: dbConfig.port,
+        envLoaded: fs.existsSync(customerEnvPath) ? 'customer' : 'default'
+    });
+});
+// ------------------------------------------
 
 function resolveBucketName() {
     if (process.env.FIREBASE_STORAGE_BUCKET) return process.env.FIREBASE_STORAGE_BUCKET
@@ -141,29 +94,17 @@ function resolveBucketName() {
 
     return 'crossmanager-482403.appspot.com'
 }
+
 // Ensure schema exists for older/local DBs (prevents docview failures when running from different environments)
 async function ensureDocumentSchema() {
     try {
         await pool.query('ALTER TABLE document_versions ADD COLUMN IF NOT EXISTS file_content TEXT')
-        await pool.query('ALTER TABLE documents ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT \'{}\'::jsonb')
-        
-        // Ensure dms_categories table for sub-folders
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS dms_categories (
-                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
-                parent_category VARCHAR(50),
-                name VARCHAR(255) NOT NULL,
-                sequence_no INTEGER DEFAULT 0,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        `)
-        
-        console.log('[Schema] document schema & dms_categories OK')
+        console.log('[Schema] document_versions.file_content OK')
     } catch (e) {
-        console.warn('[Schema] document schema check failed:', e.message)
+        console.warn('[Schema] document_versions.file_content check failed:', e.message)
     }
 }
+
 async function ensureSwmsDashboardSchema() {
     try {
         const migrationsDir = path.join(__dirname, 'migrations')
@@ -353,85 +294,6 @@ app.get(['/api/docview/:id/:filename', '/api/docview/:id'], async (req, res) => 
     }
 })
 
-// 4.5.1 View Document as HTML (Word/Excel)
-app.get('/api/docview/html/:id', async (req, res) => {
-    try {
-        const { id } = req.params
-        const query = `
-            SELECT v.file_path, v.file_content, d.name
-            FROM documents d
-            JOIN document_versions v ON d.id = v.document_id
-            WHERE d.id = $1
-            ORDER BY 
-                CASE WHEN d.current_version = v.version THEN 1 ELSE 2 END,
-                v.created_at DESC
-            LIMIT 1
-        `
-        const resDb = await pool.query(query, [id])
-        if (resDb.rows.length === 0) return res.status(404).send('Document not found')
-
-        const row = resDb.rows[0]
-        const fileContent = row.file_content
-        const docName = row.name || 'document'
-        const ext = path.extname(row.file_path || docName).toLowerCase()
-
-        if (!fileContent) {
-            return res.status(400).send('미리보기를 위한 파일 데이터가 DB에 존재하지 않습니다.')
-        }
-
-        const buffer = Buffer.from(fileContent, 'base64')
-        let htmlContent = ''
-
-        if (ext === '.docx') {
-            const result = await mammoth.convertToHtml({ buffer: buffer })
-            htmlContent = result.value
-        } else if (ext === '.xlsx' || ext === '.xls') {
-            const workbook = xlsx.read(buffer, { type: 'buffer' })
-            htmlContent = workbook.SheetNames.map(name => {
-                const sheet = workbook.Sheets[name]
-                return `<h3>${name}</h3>${xlsx.utils.sheet_to_html(sheet)}`
-            }).join('<hr/>')
-        } else {
-            return res.status(400).send('지원하지 않는 미리보기 형식입니다. 이미지나 PDF를 이용해 주세요.')
-        }
-
-        // Wrap in a clean document template
-        const fullHtml = `
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <meta charset="UTF-8">
-                <title>${docName} 미리보기</title>
-                <style>
-                    body { font-family: "Malgun Gothic", dotum, sans-serif; line-height: 1.6; color: #333; padding: 40px; max-width: 900px; margin: 0 auto; background: #ecedf1; }
-                    .container { background: white; padding: 60px; box-shadow: 0 0 20px rgba(0,0,0,0.1); min-height: 1000px; }
-                    table { border-collapse: collapse; width: 100%; margin-bottom: 20px; font-size: 0.9rem; }
-                    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-                    th { background-color: #f8f9fa; }
-                    img { max-width: 100%; height: auto; }
-                    h3 { color: #2c3e50; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-top: 30px; }
-                    @media print {
-                        body { background: white; padding: 0; }
-                        .container { box-shadow: none; padding: 0; }
-                    }
-                </style>
-            </head>
-            <body>
-                <div class="container">
-                    ${htmlContent}
-                </div>
-            </body>
-            </html>
-        `
-        res.setHeader('Content-Type', 'text/html; charset=utf-8')
-        res.send(fullHtml)
-
-    } catch (err) {
-        console.error('[HTML View] Error:', err)
-        res.status(500).send('문서 변환 중 오류가 발생했습니다.')
-    }
-})
-
 // 4.6 View Document Version File (Inline with Clean Name)
 app.get(['/api/docview/versions/:versionId/:filename', '/api/docview/versions/:versionId'], async (req, res) => {
     try {
@@ -511,6 +373,7 @@ app.get(['/api/docview/versions/:versionId/:filename', '/api/docview/versions/:v
 
 
 app.use('/api/contracts', contractsRouter)
+app.use('/api/documents', createDocumentsRouter(pool, uploadsDir))
 app.use('/api/dashboard', createDashboardRouter(pool))
 app.use('/api/reports', require('./routes/reports')(pool))
 app.use('/api/sms/checklists', require('./routes/sms_checklists')(pool))
@@ -523,245 +386,95 @@ app.use('/api/swms', require('./routes/swms_dashboard')(pool))
 app.use('/api/swms', require('./routes/swms_market')(pool))
 app.use('/api/swms', require('./routes/swms_pricing')(pool))
 
-// ------------------------------------------
-// 4.5.1 View Document as HTML (Word/Excel) - Prioritized to avoid UUID mismatch
-// ------------------------------------------
-app.get('/api/docview/html/:id', async (req, res) => {
+// --- DMS Category APIs ---
+app.get('/api/dms/categories', async (req, res) => {
     try {
-        const { id } = req.params;
-        // Basic UUID validation
-        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
-            return res.status(400).send('유효하지 않은 문서 ID 형식입니다.');
-        }
-
-        const query = `
-            SELECT v.file_path, v.file_content, d.name
-            FROM documents d
-            JOIN document_versions v ON d.id = v.document_id
-            WHERE d.id = $1
-            ORDER BY 
-                CASE WHEN d.current_version = v.version THEN 1 ELSE 2 END,
-                v.created_at DESC
-            LIMIT 1
-        `
-        const resDb = await pool.query(query, [id])
-        if (resDb.rows.length === 0) return res.status(404).send('Document not found')
-
-        const row = resDb.rows[0]
-        const fileContent = row.file_content
-        const docName = row.name || 'document'
-        const ext = path.extname(row.file_path || docName).toLowerCase()
-
-        if (!fileContent) {
-            return res.status(400).send('미리보기를 위한 파일 데이터가 DB에 존재하지 않습니다.')
-        }
-
-        const buffer = Buffer.from(fileContent, 'base64')
-        let htmlContent = ''
-
-        if (ext === '.docx') {
-            const result = await mammoth.convertToHtml({ buffer: buffer })
-            htmlContent = result.value
-        } else if (ext === '.xlsx' || ext === '.xls') {
-            const workbook = xlsx.read(buffer, { type: 'buffer' })
-            htmlContent = workbook.SheetNames.map(name => {
-                const sheet = workbook.Sheets[name]
-                return `<h3>${name}</h3>${xlsx.utils.sheet_to_html(sheet)}`
-            }).join('<hr/>')
-        } else {
-            return res.status(400).send('지원하지 않는 미리보기 형식입니다. 이미지나 PDF를 이용해 주세요.')
-        }
-
-        const fullHtml = `
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <meta charset="UTF-8">
-                <title>${docName} 미리보기</title>
-                <style>
-                    body { font-family: "Malgun Gothic", dotum, sans-serif; line-height: 1.6; color: #333; padding: 40px; max-width: 900px; margin: 0 auto; background: #ecedf1; }
-                    .container { background: white; padding: 60px; box-shadow: 0 0 20px rgba(0,0,0,0.1); min-height: 1000px; }
-                    table { border-collapse: collapse; width: 100%; margin-bottom: 20px; font-size: 0.9rem; }
-                    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-                    th { background-color: #f8f9fa; }
-                    img { max-width: 100%; height: auto; }
-                    h3 { color: #2c3e50; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-top: 30px; }
-                    @media print {
-                        body { background: white; padding: 0; }
-                        .container { box-shadow: none; padding: 0; }
-                    }
-                </style>
-            </head>
-            <body>
-                <div class="container">
-                    ${htmlContent}
-                </div>
-            </body>
-            </html>
-        `
-        res.setHeader('Content-Type', 'text/html; charset=utf-8')
-        res.send(fullHtml)
-
-    } catch (err) {
-        console.error('[HTML View] Error:', err)
-        res.status(500).send('문서 변환 중 오류가 발생했습니다.')
-    }
-})
-
-// 4.5 View Document File (Inline with Clean Name) - UUID check added
-app.get(['/api/docview/:id/:filename', '/api/docview/:id'], async (req, res) => {
-    try {
-        const { id } = req.params;
-        // Basic UUID validation
-        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
-            console.warn(`[View] Invalid UUID skipped: ${id}`);
-            return res.status(400).send('Invalid document ID');
-        }
-
-        console.log(`[Index.js View] Request for doc id: ${id}`)
-
-        const query = `
-            SELECT v.file_path, v.file_content, d.name
-            FROM documents d
-            JOIN document_versions v ON d.id = v.document_id
-            WHERE d.id = $1
-            ORDER BY 
-                CASE WHEN d.current_version = v.version THEN 1 ELSE 2 END,
-                v.created_at DESC
-            LIMIT 1
-        `
-        let resDb
-        try {
-            resDb = await pool.query(query, [id])
-        } catch (e) {
-            if (String(e?.message || '').includes('file_content')) {
-                const fallbackQuery = `
-                    SELECT v.file_path, NULL as file_content, d.name
-                    FROM documents d
-                    JOIN document_versions v ON d.id = v.document_id
-                    WHERE d.id = $1
-                    ORDER BY 
-                        CASE WHEN d.current_version = v.version THEN 1 ELSE 2 END,
-                        v.created_at DESC
-                    LIMIT 1
-                `
-                resDb = await pool.query(fallbackQuery, [id])
-            } else {
-                throw e
-            }
-        }
-
-        if (resDb.rows.length === 0) {
-            return res.status(404).send('Document not found')
-        }
-
-        const row = resDb.rows[0];
-        const filePath = row.file_path
-        const fileContent = row.file_content
-        const docName = row.name || 'Document'
-
-        let mimeType = 'application/octet-stream'
-        const ext = path.extname(filePath || docName).toLowerCase()
-        if (ext === '.pdf') mimeType = 'application/pdf'
-        else if (ext === '.png') mimeType = 'image/png'
-        else if (ext === '.jpg' || ext === '.jpeg') mimeType = 'image/jpeg'
-
-        let safeName = docName.replace(/[^a-zA-Z0-9가-힣\s\-_.]/g, '').trim()
-        if (!safeName) safeName = 'document'
-        const downloadFilename = `${safeName}${ext}`
-        const encodedName = encodeURIComponent(downloadFilename)
-
-        res.setHeader('Content-Type', mimeType)
-        res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodedName}`)
-
-        if (fileContent) {
-            const buffer = Buffer.from(fileContent, 'base64')
-            return res.send(buffer)
-        }
-
-        let fullPath = filePath ? path.join(uploadsDir, path.basename(filePath)) : null
-        if (fullPath && fs.existsSync(fullPath)) {
-            return res.sendFile(fullPath)
-        }
-
-        res.status(404).send('File not found')
-    } catch (err) {
-        console.error('[View] Error:', err)
-        res.status(500).send('Internal Server Error')
-    }
-})
-
-// 4.5.2 Download Document (attachment — triggers Windows Save dialog)
-app.get('/api/download/:id', async (req, res) => {
-    try {
-        const { id } = req.params
-        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
-            return res.status(400).send('Invalid document ID')
-        }
-
-        const query = `
-            SELECT v.file_path, v.file_content, d.name
-            FROM documents d
-            JOIN document_versions v ON d.id = v.document_id
-            WHERE d.id = $1
-            ORDER BY
-                CASE WHEN d.current_version = v.version THEN 1 ELSE 2 END,
-                v.created_at DESC
-            LIMIT 1
-        `
-        const resDb = await pool.query(query, [id])
-        if (resDb.rows.length === 0) return res.status(404).send('Document not found')
-
-        const row = resDb.rows[0]
-        const filePath = row.file_path
-        const fileContent = row.file_content
-        const docName = row.name || 'Document'
-
-        const ext = path.extname(filePath || docName).toLowerCase()
-        let mimeType = 'application/octet-stream'
-        if (ext === '.pdf') mimeType = 'application/pdf'
-        else if (ext === '.docx' || ext === '.doc') mimeType = 'application/msword'
-        else if (ext === '.xlsx' || ext === '.xls') mimeType = 'application/vnd.ms-excel'
-
-        let safeName = docName.replace(/[^a-zA-Z0-9가-힣\s\-_.]/g, '').trim() || 'document'
-        const downloadFilename = `${safeName}${ext}`
-        const encodedName = encodeURIComponent(downloadFilename)
-
-        // attachment → Windows "열기 / 저장 / 다른이름으로 저장" 다이얼로그
-        res.setHeader('Content-Type', mimeType)
-        res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodedName}`)
-
-        if (fileContent) {
-            return res.send(Buffer.from(fileContent, 'base64'))
-        }
-
-        const fullPath = filePath ? path.join(uploadsDir, path.basename(filePath)) : null
-        if (fullPath && fs.existsSync(fullPath)) {
-            return res.sendFile(fullPath)
-        }
-
-        res.status(404).send('File not found')
-    } catch (err) {
-        console.error('[Download] Error:', err)
-        res.status(500).send('Internal Server Error')
-    }
-})
-
-// Correct Mount for Documents Router
-app.use('/api/documents', createDocumentsRouter(pool, uploadsDir))
-
-// ------------------------------------------
-// DMS/PMS Support Routes
-// ------------------------------------------
-app.get('/api/projects', async (req, res) => {
-    try {
-        const { rows } = await pool.query('SELECT id, code, name, status FROM projects ORDER BY name ASC');
+        const { rows } = await pool.query('SELECT * FROM dms_categories ORDER BY display_order ASC');
         res.json(rows);
     } catch (err) {
-        console.error('[DB] Fetch projects error:', err);
-        res.status(500).json({ error: 'Failed to fetch projects' });
+        console.error(err);
+        res.status(500).json({ error: err.message });
     }
 });
+
+app.post('/api/dms/categories', async (req, res) => {
+    const { id, parent_id, label, display_order } = req.body;
+    try {
+        const { rows } = await pool.query(
+            'INSERT INTO dms_categories (id, parent_id, label, display_order) VALUES ($1, $2, $3, $4) RETURNING *',
+            [id, parent_id, label, display_order || 0]
+        );
+        res.status(201).json(rows[0]);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to create category' });
+    }
+});
+
+app.delete('/api/dms/categories/:id', async (req, res) => {
+    try {
+        await pool.query('DELETE FROM dms_categories WHERE id = $1', [req.params.id]);
+        res.status(204).send();
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to delete category' });
+    }
+});
+
+// --- DMS File Management APIs ---
+app.patch('/api/documents/:id/lock', async (req, res) => {
+    const { id } = req.params;
+    try {
+        await pool.query('UPDATE documents SET is_checked_out = true, locked_at = CURRENT_TIMESTAMP WHERE id = $1', [id]);
+        res.status(200).json({ success: true });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.patch('/api/documents/:id/unlock', async (req, res) => {
+    const { id } = req.params;
+    try {
+        await pool.query('UPDATE documents SET is_checked_out = false, locked_at = null WHERE id = $1', [id]);
+        res.status(200).json({ success: true });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.patch('/api/documents/:id/move', async (req, res) => {
+    const { id } = req.params;
+    const { category, sub_category } = req.body;
+    try {
+        await pool.query('UPDATE documents SET category = $1, sub_category = $2 WHERE id = $3', [category, sub_category, id]);
+        res.status(200).json({ success: true });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/documents/:id/copy', async (req, res) => {
+    const { id } = req.params;
+    const { category, sub_category } = req.body;
+    try {
+        const { rows } = await pool.query('SELECT * FROM documents WHERE id = $1', [id]);
+        if (rows.length === 0) return res.status(404).send();
+        const doc = rows[0];
+        const newId = require('crypto').randomUUID();
+        await pool.query(
+            'INSERT INTO documents (id, project_id, name, category, sub_category, type, status, file_path, file_size) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
+            [newId, doc.project_id, doc.name + ' (Copy)', category, sub_category, doc.type, doc.status, doc.file_path, doc.file_size]
+        );
+        res.status(201).json({ success: true });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.get('/api/docview/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const { rows } = await pool.query('SELECT file_path FROM documents WHERE id = $1', [id]);
+        if (rows.length === 0) return res.status(404).send('Not found');
+        const filePath = path.join(__dirname, rows[0].file_path);
+        if (fs.existsSync(filePath)) res.sendFile(filePath);
+        else res.status(404).send('File missing');
+    } catch (err) { res.status(500).send(err.message); }
+});
+
+// Removed broken duplicate download route to use the one in routes/documents.js
 
 // Utility helpers
 const todayStr = () => new Date().toISOString().split('T')[0]
@@ -1003,7 +716,7 @@ pool.connect((err) => {
                 await pool.query(`
                     CREATE TABLE IF NOT EXISTS sms_patrols (
                         id SERIAL PRIMARY KEY,
-                        project_id UUID REFERENCES projects(id),
+                        project_id INTEGER REFERENCES projects(id),
                         location VARCHAR(255),
                         issue_type VARCHAR(50),
                         severity VARCHAR(20),
@@ -2785,5 +2498,10 @@ app.listen(PORT, () => {
 
 
 module.exports = app
+
+
+
+
+
 
 

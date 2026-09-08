@@ -2894,56 +2894,6 @@ app.use('/api/swms', require('./routes/swms_dashboard')(pool))
 app.use('/api/swms', require('./routes/swms_market')(pool))
 app.use('/api/swms', require('./routes/swms_pricing')(pool))
 
-// Download endpoint — Windows "열기/저장" 다이얼로그 (Content-Disposition: attachment)
-app.get('/api/download/:id', async (req, res) => {
-    try {
-        const { id } = req.params
-        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
-            return res.status(400).send('Invalid document ID')
-        }
-        const resDb = await pool.query(`
-            SELECT v.file_path, v.file_content, d.name
-            FROM documents d
-            JOIN document_versions v ON d.id = v.document_id
-            WHERE d.id = $1
-            ORDER BY CASE WHEN d.current_version = v.version THEN 1 ELSE 2 END, v.created_at DESC
-            LIMIT 1
-        `, [id])
-        if (!resDb.rows.length) return res.status(404).send('Document not found')
-
-        const row = resDb.rows[0]
-        const filePath = row.file_path
-        const docName = row.name || 'document'
-        const ext = require('path').extname(filePath || docName).toLowerCase()
-        const mimeMap = { '.pdf': 'application/pdf', '.docx': 'application/msword', '.doc': 'application/msword', '.xlsx': 'application/vnd.ms-excel', '.xls': 'application/vnd.ms-excel', '.pptx': 'application/vnd.ms-powerpoint', '.ppt': 'application/vnd.ms-powerpoint', '.hwp': 'application/x-hwp' }
-        const mimeType = mimeMap[ext] || 'application/octet-stream'
-        const safeName = docName.replace(/[^a-zA-Z0-9가-힣\s\-_.]/g, '').trim() || 'document'
-        const encodedName = encodeURIComponent(`${safeName}${ext}`)
-        res.setHeader('Content-Type', mimeType)
-        res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodedName}`)
-
-        if (row.file_content) {
-            return res.send(Buffer.from(row.file_content, 'base64'))
-        }
-        if (filePath && filePath.startsWith('documents/')) {
-            try {
-                const admin = require('firebase-admin')
-                const file = admin.storage().bucket(resolveBucketName()).file(filePath)
-                const [exists] = await file.exists()
-                if (exists) {
-                    const stream = file.createReadStream()
-                    stream.on('error', () => res.status(500).send('Storage error'))
-                    return stream.pipe(res)
-                }
-            } catch (e) { console.warn('[Download] Storage error:', e.message) }
-        }
-        res.status(404).send('File not found')
-    } catch (err) {
-        console.error('[Download] Error:', err)
-        res.status(500).send('Internal Server Error')
-    }
-})
-
 module.exports = app
 
 
