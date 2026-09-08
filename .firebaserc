@@ -1,0 +1,18 @@
+{
+  "projects": {
+    "default": "crossmanager-482403"
+  },
+  "targets": {
+    "crossmanager-482403": {
+      "hosting": {
+        "main": [
+          "crossmanagern"
+        ],
+        "default": [
+          "crossmanager-482403"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

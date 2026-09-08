@@ -1,0 +1,24 @@
+# Task: PMS Document Detail and Reporting
+
+- [x] Explore existing codebase for document-related structures <!-- id: 0 -->
+    - [x] Check `pms/src/types/pms.ts`
+    - [x] Check `server/init_db.sql` and `server/index.js`
+- [x] Requirements Analysis & Design <!-- id: 1 -->
+    - [x] Define document structure (folders, categories, metadata)
+    - [x] Define "Automated Conversion" strategy
+    - [x] Integrate User Requirements (Document Types, Approval, Security)
+- [x] Create Implementation Plan (`docs/PMS_Document_Implementation_Plan.md`) <!-- id: 2 -->
+    - [x] Address user questions
+    - [x] Design Database Schema (Approvals, Shares, Versions)
+    - [x] Design Frontend UI (Explorer, Upload Modal)
+    - [x] Design Backend Logic (Routes, Report Generator)
+- [x] Organize Documentation <!-- id: 4 -->
+    - [x] Move Implementation Plan to `c:\ProjectCode\Cross\docs\`
+    - [x] Move Task List to `c:\ProjectCode\Cross\docs\`
+- [x] Implementation Phase 1 (Core) <!-- id: 5 -->
+    - [x] Update DB Schema (`server/init_db.sql`)
+    - [x] Create Backend Routes (`server/routes/documents.js`)
+    - [x] Create Frontend Document Page (`pms/src/pages/Documents.tsx`)
+- [ ] Verification <!-- id: 6 -->
+    - [ ] Test Upload/Download
+    - [ ] Test Report Generation
