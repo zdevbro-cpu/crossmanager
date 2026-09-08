@@ -159,3 +159,10 @@ functions/env_customer.env
 # 별개 프로젝트 — 이 저장소에서 관리하지 않는다
 itbookmanager/
 branchfinder/
+
+# 별개 프로젝트
+las-mgmt/
+
+# 대용량 산출물
+docs/*.pdf
+backup_*.sql
