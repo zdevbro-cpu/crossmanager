@@ -17,7 +17,7 @@ const SYSTEMS = [
         acronym: 'PMS',
         description: '', // description removed from UI usage
         icon: <PieChart size={32} />,
-        accent: '#60a5fa',        // 파랑 — 프로젝트
+        accent: '#fb923c',        // 밝은 주황 — 프로젝트
         url: import.meta.env.PROD ? '/pms' : import.meta.env.VITE_APP_URL_PMS
     },
     {
