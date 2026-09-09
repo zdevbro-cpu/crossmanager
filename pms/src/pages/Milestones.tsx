@@ -104,6 +104,12 @@ export default function MilestonesPage() {
     const [events, setEvents] = useState<CalEvent[]>([])
     const [showOthers, setShowOthers] = useState(true)
 
+    // 상단 선택기는 비면 항상 첫 프로젝트로 채워진다(다른 화면이 대상을
+    // 필요로 해서다). 그래서 '전체'를 거기서 만들 수 없다.
+    // 이 화면에서만 쓰는 범위를 따로 둔다. 상단 선택기는 건드리지 않는다.
+    const [allProjects, setAllProjects] = useState(false)
+    const scopeId = allProjects ? '' : (selectedId || '')
+
     const project = projects?.find((p: any) => p.id === selectedId)
 
     // 프로젝트를 고르면 그 현장만, 안 고르면 전 현장을 본다.
@@ -111,7 +117,7 @@ export default function MilestonesPage() {
     const load = useCallback(async () => {
         setLoading(true)
         try {
-            const q = selectedId ? `?projectId=${selectedId}` : ''
+            const q = scopeId ? `?projectId=${scopeId}` : ''
             const { data } = await apiClient.get<Task[]>(`/tasks${q}`)
             setTasks(Array.isArray(data) ? data : [])
         } catch {
@@ -120,7 +126,7 @@ export default function MilestonesPage() {
         } finally {
             setLoading(false)
         }
-    }, [selectedId, show])
+    }, [scopeId, show])
 
     useEffect(() => { load() }, [load])
 
@@ -132,11 +138,11 @@ export default function MilestonesPage() {
         if (!showOthers || !cells.length) { setEvents([]); return }
         const from = ymd(cells[0])
         const to = ymd(cells[cells.length - 1])
-        const q = selectedId ? `&projectId=${selectedId}` : ''
+        const q = scopeId ? `&projectId=${scopeId}` : ''
         apiClient.get<CalEvent[]>(`/calendar?from=${from}&to=${to}${q}`)
             .then(r => setEvents(Array.isArray(r.data) ? r.data : []))
             .catch(() => setEvents([]))   // 겹쳐 보기가 안 돼도 마일스톤은 보여야 한다
-    }, [cells, selectedId, showOthers, tasks])
+    }, [cells, scopeId, showOthers, tasks])
 
     // 날짜별로 걸치는 일정을 모은다. 기간이 여러 날이면 그 날 전부에 나온다.
     const byDate = useMemo(() => {
@@ -186,7 +192,8 @@ export default function MilestonesPage() {
     }
 
     const openNew = (dateStr: string) => {
-        if (!selectedId) { show('프로젝트를 먼저 선택하십시오.', 'warning'); return }
+        // 전체 보기에서는 어느 현장에 넣을지 정할 수 없다.
+        if (!scopeId) { show('등록하려면 「이 현장」으로 바꾸십시오.', 'warning'); return }
         setEditing({ name: '', start: dateStr, end: dateStr, progress: 0 })
     }
 
@@ -199,7 +206,7 @@ export default function MilestonesPage() {
         setBusy(true)
         try {
             const body = {
-                projectId: selectedId,
+                projectId: scopeId,
                 name: editing.name.trim(),
                 start: editing.start,
                 end: editing.end,
@@ -242,9 +249,9 @@ export default function MilestonesPage() {
                     <p className="eyebrow">프로젝트 일정</p>
                     <h2>마일스톤</h2>
                     <p className="muted">
-                        {project
+                        {scopeId && project
                             ? `[${project.code}] ${project.name} · 날짜를 누르면 등록, 일정을 누르면 수정합니다.`
-                            : '전체 프로젝트 · 앞의 숫자는 현장 코드입니다. 등록하려면 상단에서 현장을 고르십시오.'}
+                            : '전체 프로젝트 · 앞의 숫자는 현장 코드입니다. 등록하려면 「이 현장」으로 바꾸십시오.'}
                     </p>
                 </div>
                 <div className="ms-nav">
@@ -252,6 +259,13 @@ export default function MilestonesPage() {
                     <strong className="ms-title">{year}. {String(month + 1).padStart(2, '0')}</strong>
                     <button className="ms-btn" onClick={() => move(1)} title="다음 달"><ChevronRight size={16} /></button>
                     <button className="ms-btn" onClick={() => { setYear(today.getFullYear()); setMonth(today.getMonth()) }}>오늘</button>
+                    <button
+                        className={`ms-btn ${allProjects ? 'on' : ''}`}
+                        onClick={() => setAllProjects(v => !v)}
+                        title="전 현장 일정을 함께 봅니다. 등록은 「이 현장」에서만 됩니다."
+                    >
+                        {allProjects ? '전체 프로젝트' : '이 현장'}
+                    </button>
                     <button
                         className={`ms-btn ${showOthers ? 'on' : ''}`}
                         onClick={() => setShowOthers(v => !v)}
@@ -290,7 +304,7 @@ export default function MilestonesPage() {
                                     key={t.id + key}
                                     className="ms-item"
                                     title={[
-                                        !selectedId && codeOf.get(t.id)
+                                        !scopeId && codeOf.get(t.id)
                                             ? `[${codeOf.get(t.id)!.code}] ${codeOf.get(t.id)!.name}`
                                             : '',
                                         `${t.name} (${t.start?.slice(0, 10)} ~ ${(t.end || t.start)?.slice(0, 10)})`,
@@ -306,7 +320,7 @@ export default function MilestonesPage() {
                                 >
                                     {/* 전체 보기에서만 현장 배지를 붙인다.
                                         한 현장만 볼 때는 전부 같은 값이라 자리만 먹는다. */}
-                                    {!selectedId && codeOf.get(t.id) && (
+                                    {!scopeId && codeOf.get(t.id) && (
                                         <span className="ms-badge">{shortCode(codeOf.get(t.id)!.code)}</span>
                                     )}
                                     {t.name}
@@ -323,13 +337,13 @@ export default function MilestonesPage() {
                                         key={ev.source + ev.id + key}
                                         className={`ms-ev ${meta.cls}`}
                                         title={[
-                                            !selectedId && ev.project_code
+                                            !scopeId && ev.project_code
                                                 ? `[${ev.project_code}] ${ev.project_name || ''}`
                                                 : '',
                                             `[${meta.label}] ${ev.title} (${ev.start} ~ ${ev.end})`,
                                         ].filter(Boolean).join(' · ')}
                                     >
-                                        {!selectedId && ev.project_code && (
+                                        {!scopeId && ev.project_code && (
                                             <span className="ms-badge">{shortCode(ev.project_code)}</span>
                                         )}
                                         {meta.label} · {ev.title}
