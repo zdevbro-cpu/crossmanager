@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Database, Plus, Check, X, Pencil, Download, Settings } from 'lucide-react'
 import { useToast } from '../components/ToastProvider'
 import { apiClient } from '../lib/api'
+import RaTemplatePanel from './RaTemplatePanel'
 import './Page.css'
 import './Master.css'
 
@@ -676,8 +677,8 @@ export default function Master() {
                 ))}
             </nav>
 
-            {tabKey === 'codes'
-                ? <CodePanel onCount={setCodeCount} />
+            {tabKey === 'codes' ? <CodePanel onCount={setCodeCount} />
+                : tabKey === 'ra-templates' ? <RaTemplatePanel />
                 : activeTab && (
                     <ReadonlyPanel
                         tab={activeTab}
