@@ -12,9 +12,10 @@ function ProjectSwitcher() {
           onChange={(e) => setSelectedId(e.target.value)}
           disabled={isLoading || projects.length === 0}
         >
+          {/* 표기는 [코드] 명칭 으로 모듈 간 통일한다. */}
           {projects.map((p) => (
             <option key={p.id} value={p.id}>
-              {p.name}
+              {p.code ? `[${p.code}] ` : ''}{p.name}
             </option>
           ))}
         </select>

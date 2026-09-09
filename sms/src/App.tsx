@@ -174,10 +174,12 @@ function AppShell() {
                     color: 'var(--primary)'
                   }}
                 >
-                  <option value="ALL">🏢 전체 프로젝트</option>
+                  {/* 표기는 [코드] 명칭 으로 모듈 간 통일한다.
+                      코드가 앞에 오면 이름이 비슷한 현장을 구분할 수 있다. */}
+                  <option value="ALL">전체 프로젝트</option>
                   {projects.map(p => (
                     <option key={p.id} value={p.id}>
-                      📍 {p.name}
+                      {p.code ? `[${p.code}] ` : ''}{p.name}
                     </option>
                   ))}
                 </select>

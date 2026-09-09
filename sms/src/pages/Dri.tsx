@@ -219,7 +219,7 @@ export default function DriPage() {
                     {/* 상단에서 고른 현장을 그대로 쓴다. 바꾸려면 상단에서 바꾼다. */}
                     <input type="hidden" {...register('projectId', { required: true })} />
                     <p className="input" style={{ display: 'flex', alignItems: 'center', margin: 0 }}>
-                      📍 {fixedProject.name}
+                      {fixedProject.code ? `[${fixedProject.code}] ` : ''}{fixedProject.name}
                     </p>
                   </>
                 ) : (
