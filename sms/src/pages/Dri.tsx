@@ -80,6 +80,27 @@ export default function DriPage() {
   const fetchProjects = async () => apiClient.get('/projects').then(res => setProjects(res.data))
   const fetchRas = async () => apiClient.get('/sms/risk-assessments').then(res => setRas(res.data))
 
+  // 상단에서 이미 현장을 골랐는데 모달에서 또 고르게 하면 같은 선택을 두 번 한다.
+  // 고른 현장을 미리 채우고, 화면에는 어느 현장인지만 보여 준다.
+  const openModal = () => {
+    reset({
+      projectId: selectedProjectId !== 'ALL' ? selectedProjectId : '',
+      date: new Date().toISOString().slice(0, 10),
+      attendeesCount: 1,
+    })
+    setRaItems([])
+    setIsModalOpen(true)
+  }
+
+  const fixedProject = selectedProjectId !== 'ALL'
+    ? projects.find(p => p.id === selectedProjectId)
+    : null
+
+  // 공정 목록도 그 현장 것만 보여 준다. 다른 현장 공정이 섞이면 잘못 고른다.
+  const selectableRas = fixedProject
+    ? ras.filter(ra => ra.project_id === selectedProjectId)
+    : ras
+
   const onSubmit = async (data: DriForm) => {
     if (!user) return
 
@@ -115,7 +136,7 @@ export default function DriPage() {
             매일 작업 전 TBM 활동을 기록하고 주요 위험요인을 공유합니다.
           </p>
         </div>
-        <button className="btn-primary" onClick={() => setIsModalOpen(true)}>
+        <button className="btn-primary" onClick={openModal}>
           <Plus size={18} />
           TBM 등록
         </button>
@@ -192,20 +213,30 @@ export default function DriPage() {
 
             <form onSubmit={handleSubmit(onSubmit)} className="form-grid">
               <div className="form-group full">
-                <label>현장 선택</label>
-                <select {...register('projectId', { required: true })} className="input">
-                  <option value="">현장을 선택하세요</option>
-                  {projects.map(p => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
+                <label>현장</label>
+                {fixedProject ? (
+                  <>
+                    {/* 상단에서 고른 현장을 그대로 쓴다. 바꾸려면 상단에서 바꾼다. */}
+                    <input type="hidden" {...register('projectId', { required: true })} />
+                    <p className="input" style={{ display: 'flex', alignItems: 'center', margin: 0 }}>
+                      📍 {fixedProject.name}
+                    </p>
+                  </>
+                ) : (
+                  <select {...register('projectId', { required: true })} className="input">
+                    <option value="">현장을 선택하세요</option>
+                    {projects.map(p => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               <div className="form-group full">
                 <label>오늘의 공정 (RA 데이터 연동)</label>
                 <select {...register('raId', { required: true })} className="input">
                   <option value="">공정을 선택하면 위험포인트가 자동 로드됩니다</option>
-                  {ras.map(ra => (
+                  {selectableRas.map(ra => (
                     <option key={ra.id} value={ra.id}>{ra.process_name}</option>
                   ))}
                 </select>
