@@ -41,6 +41,17 @@ interface CalEvent {
     title: string
     start: string
     end: string
+    project_code: string | null
+    project_name: string | null
+}
+
+// 전체 보기에서는 어느 현장 일정인지 알아야 한다. 달력 칸이 좁아
+// [PRJ-2401] 을 통째로 넣으면 제목이 잘리므로 뒤 네 자리만 배지로 붙인다.
+// 전체 이름은 툴팁으로 본다.
+const shortCode = (code?: string | null) => {
+    if (!code) return ''
+    const m = String(code).match(/(\d{3,})\s*$/)
+    return m ? m[1] : String(code).slice(-4)
 }
 
 const SOURCE_META: Record<string, { label: string; cls: string }> = {
@@ -95,11 +106,13 @@ export default function MilestonesPage() {
 
     const project = projects?.find((p: any) => p.id === selectedId)
 
+    // 프로젝트를 고르면 그 현장만, 안 고르면 전 현장을 본다.
+    // 본사에서 이번 주에 어느 현장에 무슨 일이 있는지 훑어야 할 때가 있다.
     const load = useCallback(async () => {
-        if (!selectedId) { setTasks([]); return }
         setLoading(true)
         try {
-            const { data } = await apiClient.get<Task[]>(`/tasks?projectId=${selectedId}`)
+            const q = selectedId ? `?projectId=${selectedId}` : ''
+            const { data } = await apiClient.get<Task[]>(`/tasks${q}`)
             setTasks(Array.isArray(data) ? data : [])
         } catch {
             show('마일스톤을 불러오지 못했습니다.', 'error')
@@ -142,6 +155,15 @@ export default function MilestonesPage() {
         })
         return map
     }, [tasks])
+
+    // 전체 보기일 때 마일스톤에 붙일 현장 코드. 통합 조회 결과에서 찾는다.
+    const codeOf = useMemo(() => {
+        const m = new Map<string, { code: string; name: string }>()
+        events.forEach(e => {
+            if (e.project_code) m.set(e.id, { code: e.project_code, name: e.project_name || '' })
+        })
+        return m
+    }, [events])
 
     const eventsByDate = useMemo(() => {
         const map = new Map<string, CalEvent[]>()
@@ -220,8 +242,9 @@ export default function MilestonesPage() {
                     <p className="eyebrow">프로젝트 일정</p>
                     <h2>마일스톤</h2>
                     <p className="muted">
-                        {project ? `[${project.code}] ${project.name}` : '프로젝트를 선택하십시오'}
-                        {' · 날짜를 누르면 등록, 일정을 누르면 수정합니다.'}
+                        {project
+                            ? `[${project.code}] ${project.name} · 날짜를 누르면 등록, 일정을 누르면 수정합니다.`
+                            : '전체 프로젝트 · 앞의 숫자는 현장 코드입니다. 등록하려면 상단에서 현장을 고르십시오.'}
                     </p>
                 </div>
                 <div className="ms-nav">
@@ -266,7 +289,12 @@ export default function MilestonesPage() {
                                 <button
                                     key={t.id + key}
                                     className="ms-item"
-                                    title={`${t.name} (${t.start?.slice(0, 10)} ~ ${(t.end || t.start)?.slice(0, 10)})`}
+                                    title={[
+                                        !selectedId && codeOf.get(t.id)
+                                            ? `[${codeOf.get(t.id)!.code}] ${codeOf.get(t.id)!.name}`
+                                            : '',
+                                        `${t.name} (${t.start?.slice(0, 10)} ~ ${(t.end || t.start)?.slice(0, 10)})`,
+                                    ].filter(Boolean).join(' · ')}
                                     onClick={(e) => {
                                         e.stopPropagation()
                                         setEditing({
@@ -276,6 +304,11 @@ export default function MilestonesPage() {
                                         })
                                     }}
                                 >
+                                    {/* 전체 보기에서만 현장 배지를 붙인다.
+                                        한 현장만 볼 때는 전부 같은 값이라 자리만 먹는다. */}
+                                    {!selectedId && codeOf.get(t.id) && (
+                                        <span className="ms-badge">{shortCode(codeOf.get(t.id)!.code)}</span>
+                                    )}
                                     {t.name}
                                 </button>
                             ))}
@@ -289,8 +322,16 @@ export default function MilestonesPage() {
                                     <span
                                         key={ev.source + ev.id + key}
                                         className={`ms-ev ${meta.cls}`}
-                                        title={`[${meta.label}] ${ev.title} (${ev.start} ~ ${ev.end})`}
+                                        title={[
+                                            !selectedId && ev.project_code
+                                                ? `[${ev.project_code}] ${ev.project_name || ''}`
+                                                : '',
+                                            `[${meta.label}] ${ev.title} (${ev.start} ~ ${ev.end})`,
+                                        ].filter(Boolean).join(' · ')}
                                     >
+                                        {!selectedId && ev.project_code && (
+                                            <span className="ms-badge">{shortCode(ev.project_code)}</span>
+                                        )}
                                         {meta.label} · {ev.title}
                                     </span>
                                 )
@@ -310,12 +351,6 @@ export default function MilestonesPage() {
                         마일스톤만 여기서 등록·수정합니다. 나머지는 각 화면에서 관리합니다.
                     </span>
                 </div>
-            )}
-
-            {!selectedId && (
-                <p className="muted" style={{ marginTop: '1rem' }}>
-                    상단에서 프로젝트를 선택하면 그 현장의 마일스톤이 표시됩니다.
-                </p>
             )}
 
             {editing && (

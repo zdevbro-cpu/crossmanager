@@ -1990,45 +1990,50 @@ app.get('/api/calendar', async (req, res) => {
         }
 
         const rows = [].concat(
-            await q(`SELECT id::text, 'MILESTONE' AS source, name AS title,
-                            TO_CHAR(start_date,'YYYY-MM-DD') AS start,
-                            TO_CHAR(COALESCE(end_date, start_date),'YYYY-MM-DD') AS "end"
-                       FROM tasks
-                      WHERE ($1::uuid IS NULL OR project_id = $1)
-                        AND start_date IS NOT NULL
-                        AND start_date <= $3::date AND COALESCE(end_date, start_date) >= $2::date`),
+            await q(`SELECT t.id::text, 'MILESTONE' AS source, t.name AS title,
+                            TO_CHAR(t.start_date,'YYYY-MM-DD') AS start,
+                            TO_CHAR(COALESCE(t.end_date, t.start_date),'YYYY-MM-DD') AS "end",
+                            p.code AS project_code, p.name AS project_name
+                       FROM tasks t LEFT JOIN projects p ON p.id = t.project_id
+                      WHERE ($1::uuid IS NULL OR t.project_id = $1)
+                        AND t.start_date IS NOT NULL
+                        AND t.start_date <= $3::date AND COALESCE(t.end_date, t.start_date) >= $2::date`),
 
-            await q(`SELECT id::text, 'TBM' AS source,
-                            COALESCE(NULLIF(work_content,''), 'TBM') AS title,
-                            TO_CHAR(date,'YYYY-MM-DD') AS start, TO_CHAR(date,'YYYY-MM-DD') AS "end"
-                       FROM sms_dris
-                      WHERE ($1::uuid IS NULL OR project_id = $1)
-                        AND date BETWEEN $2::date AND $3::date`),
+            await q(`SELECT d.id::text, 'TBM' AS source,
+                            COALESCE(NULLIF(d.work_content,''), 'TBM') AS title,
+                            TO_CHAR(d.date,'YYYY-MM-DD') AS start, TO_CHAR(d.date,'YYYY-MM-DD') AS "end",
+                            p.code AS project_code, p.name AS project_name
+                       FROM sms_dris d LEFT JOIN projects p ON p.id = d.project_id
+                      WHERE ($1::uuid IS NULL OR d.project_id = $1)
+                        AND d.date BETWEEN $2::date AND $3::date`),
 
-            await q(`SELECT id::text, 'EDU' AS source,
-                            COALESCE(NULLIF(title,''), '교육') AS title,
-                            TO_CHAR(date,'YYYY-MM-DD') AS start, TO_CHAR(date,'YYYY-MM-DD') AS "end"
-                       FROM sms_educations
-                      WHERE ($1::uuid IS NULL OR project_id = $1)
-                        AND date BETWEEN $2::date AND $3::date`),
+            await q(`SELECT e.id::text, 'EDU' AS source,
+                            COALESCE(NULLIF(e.title,''), '교육') AS title,
+                            TO_CHAR(e.date,'YYYY-MM-DD') AS start, TO_CHAR(e.date,'YYYY-MM-DD') AS "end",
+                            p.code AS project_code, p.name AS project_name
+                       FROM sms_educations e LEFT JOIN projects p ON p.id = e.project_id
+                      WHERE ($1::uuid IS NULL OR e.project_id = $1)
+                        AND e.date BETWEEN $2::date AND $3::date`),
 
             // 위험성평가는 적용기간이 있으면 그 기간, 없으면 작성일 하루로 본다.
-            await q(`SELECT id::text, 'RA' AS source,
-                            COALESCE(NULLIF(process_name,''), '위험성평가') AS title,
-                            TO_CHAR(COALESCE(period_from, date),'YYYY-MM-DD') AS start,
-                            TO_CHAR(COALESCE(period_to, period_from, date),'YYYY-MM-DD') AS "end"
-                       FROM sms_risk_assessments
-                      WHERE ($1::uuid IS NULL OR project_id = $1)
-                        AND COALESCE(period_from, date) <= $3::date
-                        AND COALESCE(period_to, period_from, date) >= $2::date`),
+            await q(`SELECT r.id::text, 'RA' AS source,
+                            COALESCE(NULLIF(r.process_name,''), '위험성평가') AS title,
+                            TO_CHAR(COALESCE(r.period_from, r.date),'YYYY-MM-DD') AS start,
+                            TO_CHAR(COALESCE(r.period_to, r.period_from, r.date),'YYYY-MM-DD') AS "end",
+                            p.code AS project_code, p.name AS project_name
+                       FROM sms_risk_assessments r LEFT JOIN projects p ON p.id = r.project_id
+                      WHERE ($1::uuid IS NULL OR r.project_id = $1)
+                        AND COALESCE(r.period_from, r.date) <= $3::date
+                        AND COALESCE(r.period_to, r.period_from, r.date) >= $2::date`),
 
-            await q(`SELECT id::text, 'EXPIRY' AS source,
-                            COALESCE(NULLIF(title,''), '만료 예정') AS title,
-                            TO_CHAR(expire_date,'YYYY-MM-DD') AS start,
-                            TO_CHAR(expire_date,'YYYY-MM-DD') AS "end"
-                       FROM expiry_watch
-                      WHERE ($1::uuid IS NULL OR project_id = $1)
-                        AND expire_date BETWEEN $2::date AND $3::date`),
+            await q(`SELECT w.id::text, 'EXPIRY' AS source,
+                            COALESCE(NULLIF(w.title,''), '만료 예정') AS title,
+                            TO_CHAR(w.expire_date,'YYYY-MM-DD') AS start,
+                            TO_CHAR(w.expire_date,'YYYY-MM-DD') AS "end",
+                            p.code AS project_code, p.name AS project_name
+                       FROM expiry_watch w LEFT JOIN projects p ON p.id = w.project_id
+                      WHERE ($1::uuid IS NULL OR w.project_id = $1)
+                        AND w.expire_date BETWEEN $2::date AND $3::date`),
         )
 
         res.json(rows)

@@ -104,8 +104,14 @@ function scanSheet(ws) {
         }
     }
 
-    const hazardBlock = findHazardBlock(ws, maxR, maxC)
     const attendeeBlock = findAttendeeBlock(ws, maxR, maxC)
+    let hazardBlock = findHazardBlock(ws, maxR, maxC)
+
+    // 참석자 명단의 번호(1 2 3 …)가 위험요인 반복으로 잡히는 일이 있다.
+    // 참석자 줄보다 아래에서 시작하면 위험요인이 아니다. 잘못 잡느니 비운다.
+    if (hazardBlock && attendeeBlock && hazardBlock.startRow >= attendeeBlock.startRow - 1) {
+        hazardBlock = null
+    }
     if (hazardBlock) hits += 2
 
     if (hits < 2) return null
@@ -189,10 +195,28 @@ function findAttendeeBlock(ws, maxR, maxC) {
             }
         }
         if (nameCols.length >= 1) {
-            return { startRow: r + 1, nameCols, rowCount: 10 }
+            const startRow = r + 1
+            return { startRow, nameCols, rowStep: rowStepAt(ws, startRow, nameCols[0]), rowCount: 10 }
         }
     }
     return null
+}
+
+// 한 칸이 세로로 몇 행을 차지하는지 잰다.
+// 이름 칸이 2행 병합인 양식이 있다. 1행씩 내려가며 쓰면 다음 사람이
+// 앞사람을 덮어 절반이 사라진다.
+function rowStepAt(ws, r, c) {
+    try {
+        const merges = ws._merges || {}
+        for (const key of Object.keys(merges)) {
+            const m = merges[key]
+            const model = m && m.model ? m.model : m
+            if (model && model.top <= r && model.bottom >= r && model.left <= c && model.right >= c) {
+                return Math.max(1, model.bottom - model.top + 1)
+            }
+        }
+    } catch { /* 병합 정보를 못 읽으면 1행으로 본다 */ }
+    return 1
 }
 
 const ymd = (d) => `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`
@@ -231,11 +255,19 @@ async function renderTbmWithTemplate(templateBuffer, tpl, tbm) {
     const hb = layout.hazard || tpl.hazard_block
     const hazards = tbm.hazards || []
     if (hb && hazards.length) {
-        for (let i = 0; i < Math.min(hazards.length, hb.count); i++) {
-            const r = hb.startRow + i * (hb.rowStep || 1)
+        const step = hb.rowStep || 1
+        for (let i = 0; i < Math.min(hazards.length, hb.count || hazards.length); i++) {
             const h = hazards[i]
-            if (hb.descCol) ws.getRow(r).getCell(hb.descCol).value = h.hazard_desc || ''
-            if (hb.measureCol) ws.getRow(r).getCell(hb.measureCol).value = h.reduction_measure || ''
+            if (hb.descCol) {
+                ws.getRow(hb.startRow + i * step).getCell(hb.descCol).value = h.hazard_desc || ''
+            }
+            if (hb.measureCol) {
+                // 대책이 위험과 같은 줄에 있는 양식도, 아래 별도 블록에 있는 양식도 있다.
+                // 동우화인켐 일지는 1R 잠재위험 19~26행, 3R 대책 27~34행으로 나뉜다.
+                // measureStartRow 가 있으면 그 블록에, 없으면 같은 줄에 쓴다.
+                const mr = (hb.measureStartRow || hb.startRow) + i * step
+                ws.getRow(mr).getCell(hb.measureCol).value = h.reduction_measure || ''
+            }
         }
     }
 
@@ -245,10 +277,11 @@ async function renderTbmWithTemplate(templateBuffer, tpl, tbm) {
     if (ab && attendees.length) {
         const cols = ab.nameCols || []
         const perCol = ab.rowCount || 10
+        const step = ab.rowStep || 1
         attendees.forEach((a, i) => {
             const colIdx = Math.floor(i / perCol)
             if (colIdx >= cols.length) return      // 양식 칸보다 사람이 많으면 넘치는 만큼은 못 적는다
-            const r = ab.startRow + (i % perCol)
+            const r = ab.startRow + (i % perCol) * step
             ws.getRow(r).getCell(cols[colIdx]).value = a.worker_name || ''
         })
     }

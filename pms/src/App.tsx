@@ -49,7 +49,6 @@ const OverviewPage = lazy(() => import('./pages/Overview'))
 const ProjectsPage = lazy(() => import('./pages/Projects'))
 const ReportsPage = lazy(() => import('./pages/Reports'))
 const ResourcesPage = lazy(() => import('./pages/Resources'))
-const SchedulePage = lazy(() => import('./pages/Schedule'))
 const MilestonesPage = lazy(() => import('./pages/Milestones'))
 const MembersPage = lazy(() => import('./pages/Members'))
 const SignupPage = lazy(() => import('./pages/Signup'))
@@ -201,7 +200,8 @@ function App() {
                   }
                 />
                 {/* 간트(WBS)는 선후행·가중치를 다 채워야 그림이 나와 유지가 어려웠다.
-                    달력으로 바꾸고 기존 화면은 지우지 않고 경로만 남겨 둔다. */}
+                    달력(마일스톤)으로 대체했다. 같은 tasks 테이블을 쓰므로
+                    데이터는 그대로 남는다. 예전 주소는 마일스톤으로 보낸다. */}
                 <Route
                   path="/milestones"
                   element={
@@ -210,14 +210,7 @@ function App() {
                     </RequireAuth>
                   }
                 />
-                <Route
-                  path="/schedule"
-                  element={
-                    <RequireAuth>
-                      <SchedulePage />
-                    </RequireAuth>
-                  }
-                />
+                <Route path="/schedule" element={<Navigate to="/milestones" replace />} />
                 <Route
                   path="/resources"
                   element={

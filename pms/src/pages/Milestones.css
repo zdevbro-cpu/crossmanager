@@ -272,3 +272,16 @@
   background: rgba(28, 126, 214, 0.28);
   border: 1px solid rgba(77, 171, 247, 0.45);
 }
+
+/* 현장 배지. 전체 보기에서만 붙는다. 제목을 거의 먹지 않도록 작게 둔다. */
+.ms-badge {
+  display: inline-block;
+  margin-right: 4px;
+  padding: 0 4px;
+  border-radius: 4px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #0b1324;
+  background: rgba(198, 213, 240, 0.85);
+  vertical-align: 1px;
+}
