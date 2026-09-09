@@ -14,6 +14,37 @@ interface RiskItemForm {
     mitigationMeasure: string
     actionManager: string
     actionDeadline: string
+    hazardId?: number          // 라이브러리에서 가져온 항목의 출처
+    hazardClass?: string
+    legalBasis?: string
+    currentControl?: string
+}
+
+// 위험요인 라이브러리에서 고른 항목을 평가서 라인으로 바꾼다.
+// 문서를 통째로 복사하지 않고 항목 단위로만 가져온다(설계 개요서 3.2).
+function fromLibrary(): RiskItemForm[] | null {
+    try {
+        const raw = sessionStorage.getItem('ra_picked_hazards')
+        if (!raw) return null
+        const list = JSON.parse(raw)
+        if (!Array.isArray(list) || list.length === 0) return null
+        sessionStorage.removeItem('ra_picked_hazards')
+        return list.map((h: any) => ({
+            riskFactor: h.hazard_desc || '',
+            riskType: h.accident_type_code || '기타',
+            frequency: h.frequency || 1,
+            severity: h.severity || 1,
+            mitigationMeasure: h.reduction_measure || '',
+            actionManager: '',
+            actionDeadline: '',
+            hazardId: h.id,
+            hazardClass: h.hazard_class || '',
+            legalBasis: h.legal_basis || '',
+            currentControl: h.current_control || '',
+        }))
+    } catch (e) {
+        return null
+    }
 }
 
 interface RiskAssessmentForm {
@@ -33,7 +64,7 @@ export default function RiskAssessmentFormPage() {
             projectId: '',
             processName: '',
             assessorName: '',
-            items: [
+            items: fromLibrary() || [
                 { riskFactor: '', riskType: '기타', frequency: 1, severity: 1, mitigationMeasure: '', actionManager: '', actionDeadline: '' }
             ]
         }

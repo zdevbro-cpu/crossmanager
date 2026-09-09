@@ -2290,28 +2290,78 @@ app.post('/api/sms/risk-assessments', async (req, res) => {
         const raId = raRes.rows[0].id
 
         // Create Items
+        // 빈도x강도로 등급을 매긴다. 부록 A.4 매트릭스이며 현장 실측값과 일치한다.
+        const gradeOf = (f, s) => {
+            const v = (f || 0) * (s || 0)
+            return v >= 20 ? 'A' : v >= 15 ? 'B' : v >= 10 ? 'C' : v > 0 ? 'D' : null
+        }
+
+        const usedHazardIds = []
         if (items && items.length > 0) {
+            let order = 0
             for (const item of items) {
+                order++
                 await client.query(`
                     INSERT INTO sms_risk_items (
-                        assessment_id, risk_factor, risk_type, frequency, severity, 
-                        mitigation_measure, action_manager, action_deadline
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                        assessment_id, risk_factor, risk_type, frequency, severity,
+                        mitigation_measure, action_manager, action_deadline,
+                        hazard_id, hazard_class, legal_basis, current_control, grade, sort_order
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
                 `, [
                     raId,
                     item.riskFactor,
-                    item.riskType || '��??',
+                    item.riskType || '기타',
                     item.frequency || 1,
                     item.severity || 1,
                     item.mitigationMeasure || '',
                     item.actionManager || '',
-                    item.actionDeadline || null
+                    item.actionDeadline || null,
+                    item.hazardId || null,
+                    item.hazardClass || null,
+                    item.legalBasis || null,
+                    item.currentControl || null,
+                    gradeOf(item.frequency, item.severity),
+                    order
                 ])
+                if (item.hazardId) usedHazardIds.push(item.hazardId)
             }
         }
 
+        // 라이브러리에서 가져온 항목은 사용 횟수를 올린다. 자주 쓰는 것이 위로 오게 한다.
+        if (usedHazardIds.length) {
+            await client.query(
+                'UPDATE hazard_item SET usage_count = usage_count + 1 WHERE id = ANY($1::bigint[])',
+                [usedHazardIds])
+        }
+
+        // 작성한 평가서를 DMS 에 문서로 등록한다.
+        // 개요서 4.1 — 업무 모듈이 만들고 DMS 는 보관·유통만 한다.
+        let documentId = null
+        try {
+            const HQ = '00000000-0000-0000-0000-000000000001'
+            const docName = `위험성평가_${processName || ''}_${new Date().toISOString().slice(0, 10)}`
+            const d = await client.query(`
+                INSERT INTO documents (project_id, category, sub_category, type, name, status,
+                                       security_level, current_version, doc_type_code)
+                VALUES ($1, '01_안전_보건', '03_위험성_평가', 'RA', $2, 'DRAFT', 'NORMAL', 'v1', 'RA')
+                RETURNING id`, [projectId || HQ, docName])
+            documentId = d.rows[0].id
+
+            // 문서와 업무 레코드를 잇는다. DMS 는 업무 테이블을 직접 참조하지 않는다(설계서 2.1).
+            await client.query(`
+                INSERT INTO document_link (document_id, entity_type, entity_id, relation)
+                VALUES ($1, 'RA', $2, 'source')
+                ON CONFLICT DO NOTHING`, [documentId, String(raId)])
+
+            await client.query('UPDATE sms_risk_assessments SET document_id = $1 WHERE id = $2',
+                [documentId, raId])
+        } catch (e) {
+            // 문서 등록 실패가 평가서 저장을 막지 않게 한다.
+            console.warn('[RA] DMS 등록 실패:', e.message)
+        }
+
         await client.query('COMMIT')
-        res.status(201).json(raRes.rows[0])
+        res.status(201).json({ ...raRes.rows[0], documentId })
     } catch (err) {
         await client.query('ROLLBACK')
         console.error(err)
@@ -2970,3 +3020,5 @@ app.get('/api/download/:id', async (req, res) => {
 module.exports = app
 
 
+
+// deploy: 1788915616

@@ -67,9 +67,10 @@ function RiskAssessmentPage() {
           </p>
         </div>
         <div style={{ display: 'flex', gap: '0.75rem' }}>
-          <button className="btn-secondary" onClick={() => navigate('/sms/ra/form-editor')}>
+          {/* 위험요인을 먼저 고르고 오는 길. 문서 통째 복사 대신 항목 단위 조립(개요서 3.2). */}
+          <button className="btn-secondary" onClick={() => navigate('/sms/hazard-library')}>
             <FileSpreadsheet size={18} />
-            위험성평가표작성
+            라이브러리에서 담기
           </button>
           <button className="btn-primary" onClick={() => navigate('/sms/ra/new')}>
             <Plus size={18} />
