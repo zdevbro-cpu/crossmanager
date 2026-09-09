@@ -1,0 +1,188 @@
+/* 문서 체크리스트 전용 스타일.
+ * 기존 스타일 파일은 건드리지 않는다. 여기 클래스는 전부 dc- 로 시작한다. */
+
+.dc {
+  margin-top: 0.5rem;
+}
+
+.dc-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.9rem;
+}
+
+.dc-title {
+  margin: 0;
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: #f2f5ff;
+}
+
+.dc-sub {
+  margin: 0.2rem 0 0;
+  font-size: 0.82rem;
+  color: #8ea3c0;
+}
+
+.dc-head-right {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-shrink: 0;
+}
+
+.dc-count {
+  font-size: 0.85rem;
+  color: #c6d5f0;
+}
+
+.dc-warn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 7px;
+  font-size: 0.8rem;
+  color: #ffd27f;
+  background: rgba(255, 186, 0, 0.12);
+  border: 1px solid rgba(255, 186, 0, 0.35);
+}
+
+.dc-icon {
+  display: inline-flex;
+  padding: 0.25rem;
+  border-radius: 7px;
+  color: #9fb2cc;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  cursor: pointer;
+}
+
+.dc-icon:hover {
+  color: #f6f8ff;
+  border-color: rgba(99, 164, 255, 0.5);
+}
+
+.dc-group {
+  margin-bottom: 1.1rem;
+}
+
+.dc-group-label {
+  margin: 0 0 0.3rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #7d90ab;
+}
+
+.dc-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.dc-table th {
+  padding: 0.35rem 0.45rem;
+  text-align: left;
+  white-space: nowrap;
+  font-weight: 600;
+  color: #9fb2cc;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.dc-table td {
+  padding: 0.32rem 0.45rem;
+  line-height: 1.4;
+  vertical-align: middle;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.dc-table tbody tr:hover td {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.dc-dim {
+  color: #8ea3c0;
+  font-size: 0.8rem;
+}
+
+.dc-hint {
+  white-space: nowrap;
+}
+
+.dc-missing {
+  color: #ffb4b4;
+  font-size: 0.82rem;
+}
+
+.dc-tag {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 6px;
+  font-size: 0.72rem;
+}
+
+.dc-tag-req {
+  margin-left: 0;
+  color: #cfe0fa;
+  background: rgba(99, 164, 255, 0.16);
+  border: 1px solid rgba(99, 164, 255, 0.4);
+}
+
+.dc-tag-warn {
+  color: #ffd27f;
+  background: rgba(255, 186, 0, 0.12);
+  border: 1px solid rgba(255, 186, 0, 0.35);
+}
+
+.dc-ok-icon {
+  color: #9cf0c8;
+  vertical-align: -2px;
+}
+
+.dc-tpl {
+  margin-left: 0.35rem;
+}
+
+.dc-src {
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  color: #9fb2cc;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.dc-upload {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.55rem;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  color: #c6d5f0;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.dc-upload:hover {
+  color: #f6f8ff;
+  border-color: rgba(99, 164, 255, 0.5);
+}
+
+.dc-foot {
+  margin: 0.5rem 0 0;
+  font-size: 0.8rem;
+  line-height: 1.55;
+  color: #7d90ab;
+}
+
+.dc-muted {
+  font-size: 0.85rem;
+  color: #8ea3c0;
+}

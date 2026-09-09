@@ -10,6 +10,7 @@ import { CheckCircle, Trash2, Plus } from 'lucide-react'
 import type { Project } from '../types/pms'
 import { validateDateRange } from '../utils/validation'
 import { usePersonnel } from '../hooks/usePersonnel'
+import DocChecklist from '../components/DocChecklist'
 
 const constructionTypeOptions = [
   { code: 'DC', label: '해체/철거' },
@@ -435,6 +436,17 @@ function ProjectsPage() {
               </select>
             </label>
           </form>
+        </section>
+      )}
+
+      {/* 프로젝트를 고른 뒤에만 띄운다. 생성 중에는 프로젝트 id 가 없어
+          체크리스트를 만들 수 없다. 양식은 만든 뒤에 붙인다. */}
+      {!isCreating && selectedId && (
+        <section className="card">
+          <div className="table-head">
+            <p className="card-label">문서·양식</p>
+          </div>
+          <DocChecklist projectId={selectedId} />
         </section>
       )}
     </div>
