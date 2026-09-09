@@ -61,7 +61,9 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="page" style={{ maxWidth: '1200px' }}>
+    // 폭은 .content 가 정한다. 여기서 인라인으로 상한을 두면 CSS 보다
+    // 우선해 화면을 넓혀도 1200px 에서 멈춘다.
+    <div className="page">
       <header className="page-header">
         <div>
           <p className="eyebrow">SMS Dashboard</p>

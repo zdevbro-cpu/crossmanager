@@ -70,7 +70,7 @@ export default function ChecklistPage() {
     });
 
     return (
-        <div className="page-container" style={{ padding: '2rem', maxWidth: '1200px', margin: '0 auto' }}>
+        <div className="page-container">
             <header className="page-header" style={{ marginBottom: '2rem' }}>
                 <div className="header-left">
                     <div>
