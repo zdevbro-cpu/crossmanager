@@ -195,3 +195,95 @@ firebase deploy --only hosting            # 화면
 - [ ] `Server/uploads/` 임시파일 22개 — 이제 생성되지 않음. 정리 여부 판단 필요
 - [ ] 기존 Firebase 문서 다운로드 폴백 — 코드에 남겨뒀으나 버킷을 비웠으므로 사실상 미사용
 - [ ] `Server` 와 `functions` 의 라우터 이중 관리 구조 정리
+
+---
+
+# 2026-09-09 작업분 (커밋 47건 · 원격 푸시 완료)
+
+## 오늘 한 것
+
+### 화면 구조
+- 4개 모듈(SMS·PMS·EMS·SWMS) 좌측 사이드바 전환, 메뉴는 하나도 빼지 않고 성격별로 묶음
+- 본문 좌측정렬 + 폭 제한 제거. 제한이 `.content` → `.page` → 인라인 style 3겹에 걸려 있었다
+- 모듈마다 달랐던 안쪽 여백을 `.content` 1.5rem 한 곳으로 통일, 스크롤바 어둡게
+- 포털 카드 PMS·DMS·SMS·EMS 순 4열, 아이콘 색 구분
+
+### 마스터·양식
+- 공통코드 모듈 구분(`code_group.module`). 조회는 `해당 모듈 + COMMON`, COMMON 은 읽기 전용(서버에서도 막음)
+- SMS 마스터 「기준정보」 신설 — 10개 탭, 공통코드만 편집
+- RA 양식 등록·출력 + 등록 화면
+- **TBM 양식 등록기** — 인식기(`lib/tbm-template.js`) + API + 화면 + 출력.
+  RA 와 달리 '라벨 옆 칸 좌표'로 채운다. 드라이브 양식 6종으로 검증
+- 프로젝트 문서 체크리스트(PMS) — 표준문서 대비 양식 등록 현황
+- 발주처 마스터를 PMS 시스템관리로 이동, 프로젝트가 마스터를 참조하도록 전환
+
+### PMS
+- **프로젝트 저장 복구** — API 가 없는 컬럼 7개(`client`·`address`·`start_date`…)를 참조해 저장이 실패했다.
+  컬럼 추가 + 발주처는 `client_id` 참조로 전환
+- **일정(WBS) → 마일스톤 달력**. 간트는 삭제(`/schedule` 은 마일스톤으로 리다이렉트).
+  같은 `tasks` 테이블을 쓰므로 데이터는 그대로
+- 마일스톤에 TBM·교육·위험성평가·순찰·점검·만료 겹쳐 보기(`GET /api/calendar`)
+- 전체 프로젝트 보기 + 현장 배지
+
+### DMS
+- **유실된 소스 복구** — 저장소에 없던 897행 대시보드·검색모달·API 훅을 이력에서 되살리고,
+  한 번도 커밋된 적 없는 11개 파일은 PMS 에서 재구성
+- **문서 바로보기 복구** — 원인 3중: 드라이브 분기 누락 + 배포본에 Word/Excel 라우트 부재 + 라우트 충돌
+- 검색을 모달 → 화면 상시 필터(2줄 5열)로
+- 문서 대분류 추가 기능, 목록 더블클릭으로 열기
+
+### 데이터·인프라
+- **`index.html` 캐시 무효화** — 배포해도 최대 1시간 동안 옛 화면이 뜨던 문제
+- 프로젝트 상태 `ACTIVE` 통일(+CHECK 제약), 프로젝트 표기 `[코드] 명칭` 통일
+- `tasks` 테이블 신설 — 없어서 보고서 생성과 일정 화면이 통째로 실패했다
+- 순찰·점검에 실시일(`date`) 추가. `created_at`(입력 시각)과 다르다
+- 체크리스트의 목업 프로젝트(`'p1'`) 제거 → 상단에서 고른 현장 사용
+- 인코딩 깨진 문서 8건 논리 삭제(첨부 없는 빈 DRAFT, 복구 불가)
+- SWMS 접근 제한(원방업무관리 결정 전까지). 해제는 스위치 2곳:
+  `Portal/src/pages/Dashboard.tsx` 의 `RESTRICTED_SYSTEMS`, `swms/src/App.tsx` 의 `ACCESS_RESTRICTED`
+
+## 오늘 추가된 마이그레이션 (전부 Cloud SQL 적용 완료)
+
+```
+20260909_code_module.sql              공통코드 모듈 구분
+20260909_ra_template_registration.sql RA 양식 등록
+20260909_doc_checklist.sql            문서 체크리스트 + 크로스 기본 프로파일
+20260909_projects_columns.sql         프로젝트 컬럼 정리
+20260909_project_status_active.sql    상태 ACTIVE 통일
+20260909_tasks.sql                    일정 작업 테이블
+20260909_tasks_fix.sql                predecessors text[] 정정
+20260909_patrol_checklist_date.sql    순찰·점검 실시일
+```
+
+## 다음에 할 것
+
+- [ ] 검수 대기 위험요인 897건 등급 부여
+- [ ] 협력업체·인력·장비 마스터 입력 (현재 0건)
+- [ ] 체크리스트 템플릿 0건 — 등록해야 점검 기능이 돈다
+- [ ] 마스터 일괄 등록(엑셀 업로드) — 쓰기 API 없음
+- [ ] `Server` 와 `functions` 라우터 이중 관리 정리
+
+## 집에서 시작할 때
+
+1. `git pull origin dms-drive-m0m3`
+2. **환경설정 파일 12개는 깃에 없다.** 회사 PC 에서 따로 옮겨야 한다:
+   ```
+   Server/.env.local  Server/.env  Server/env_customer.env  Server/serviceAccountKey.json
+   functions/.env
+   sms/.env.local  pms/.env.local  dms/.env.local  swms/.env.local  Portal/.env.local
+   ems/.env  ems/.env.local
+   ```
+   여기에 Cloud SQL 접속정보와 구글 드라이브 OAuth 리프레시 토큰이 들어 있다.
+3. 각 폴더에서 `npm install` (`Server` `functions` `sms` `pms` `dms` `ems` `swms` `Portal`)
+4. DB 는 Cloud SQL 공용이라 마이그레이션을 다시 적용할 필요 없다.
+   집 IP 가 Cloud SQL 승인 네트워크에 없으면 접속이 막힌다 — 콘솔에서 추가해야 한다.
+
+## 알아둘 것 (오늘 새로 확인)
+
+- 배포는 `firebase deploy --only hosting,functions`. 화면은 각 모듈 `npm run build` 후
+  `dist_all/<모듈>/` 로 복사해야 반영된다
+- bash·curl 로 한글을 보내면 값이 깨져 저장된다. 검증은 Node 스크립트(UTF-8)로 할 것
+- `Server/routes/*.js` 를 고치면 `functions/routes/*.js` 에도 복사해야 한다.
+  `Server/index.js` 와 `functions/app.js` 도 마찬가지다
+- 같은 경로의 라우트가 여러 번 등록된 곳이 있다. **먼저 등록된 것이 이긴다** —
+  `/api/projects` 는 3개, `/api/docview` 는 하위 경로와 충돌했었다
