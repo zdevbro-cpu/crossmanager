@@ -51,8 +51,14 @@ const SYSTEMS = [
     }
 ];
 
+// 결정이 날 때까지 화면에 내보내지 않는 모듈.
+// SWMS 는 원방업무관리를 그대로 쓸지 통합할지 정해지지 않았다.
+// 정해지면 이 배열을 비우면 바로 되살아난다. 카드 정의는 그대로 남겨 둔다.
+const RESTRICTED_SYSTEMS: string[] = ['SWMS'];
+
 export default function Dashboard() {
     const { user } = useAuth();
+    const visibleSystems = SYSTEMS.filter((s) => !RESTRICTED_SYSTEMS.includes(s.id));
 
     const handleLogout = async () => {
         await signOut(auth);
@@ -84,6 +90,11 @@ export default function Dashboard() {
     // For dev testing, if user.allowedSystems is undefined, unlock all?
     // Let's implement strict check if allowedSystems is present, otherwise check role.
     const isAllowed = (sysId: string) => {
+        // 결정이 날 때까지 막아 두는 모듈.
+        // SWMS 는 원방업무관리를 그대로 쓸지 통합할지 정해지지 않았다.
+        // 정해지면 이 목록에서 빼면 바로 열린다.
+        if (RESTRICTED_SYSTEMS.includes(sysId)) return false;
+
         // ALWAYS ALLOW DMS FOR EVERYONE (DEBUGGING / TEMP FIX)
         if (sysId === 'DMS') return true;
 
@@ -122,7 +133,7 @@ export default function Dashboard() {
                 </div>
 
                 <div className="system-grid">
-                    {SYSTEMS.map((sys, index) => {
+                    {visibleSystems.map((sys, index) => {
                         const allowed = isAllowed(sys.id);
                         return (
                             <motion.div

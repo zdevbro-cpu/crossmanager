@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Routes, Route, NavLink } from 'react-router-dom'
-import { Package, Scale, TrendingUp, TrendingDown, Warehouse, Wallet, BarChart3, FileText, LogOut, MapPin, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { Package, Scale, TrendingUp, TrendingDown, Warehouse, Wallet, BarChart3, FileText, LogOut, MapPin, PanelLeftClose, PanelLeftOpen, Lock } from 'lucide-react'
 import { useAuth } from './hooks/useAuth'
 import { SiteProvider, useSite } from './contexts/SiteContext'
 import { ProjectProvider } from './contexts/ProjectContext'
@@ -216,7 +216,61 @@ function AppShell() {
     )
 }
 
+// 접근 제한.
+// 원방업무관리를 그대로 쓸지 이 모듈로 통합할지 정해지지 않았다.
+// 포털 카드는 감췄지만 주소를 직접 치면 열리므로 여기서도 막는다.
+// 정해지면 이 값만 false 로 바꾸면 된다. 화면·라우트는 손대지 않았다.
+const ACCESS_RESTRICTED = true
+
+function RestrictedNotice() {
+    return (
+        <div style={{
+            minHeight: '100vh',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '2rem',
+            color: '#e8ecf7',
+        }}>
+            <div style={{
+                maxWidth: 460,
+                padding: '2rem',
+                borderRadius: 14,
+                textAlign: 'center',
+                background: 'rgba(12, 18, 32, 0.92)',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+            }}>
+                <Lock size={30} style={{ color: '#9fb2cc' }} />
+                <h2 style={{ margin: '0.9rem 0 0.5rem', fontSize: '1.15rem' }}>
+                    접근이 제한된 시스템입니다
+                </h2>
+                <p style={{ margin: 0, fontSize: '0.9rem', lineHeight: 1.6, color: '#9fb2cc' }}>
+                    스크랩·폐기물 관리시스템(SWMS)은 운영 방식이 확정되기 전까지
+                    사용할 수 없습니다.
+                </p>
+                <a
+                    href={getPortalHomeUrl()}
+                    style={{
+                        display: 'inline-block',
+                        marginTop: '1.4rem',
+                        padding: '0.5rem 1.1rem',
+                        borderRadius: 10,
+                        fontSize: '0.9rem',
+                        color: '#c6d5f0',
+                        textDecoration: 'none',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                    }}
+                >
+                    포털로 돌아가기
+                </a>
+            </div>
+        </div>
+    )
+}
+
 export default function App() {
+    if (ACCESS_RESTRICTED) return <RestrictedNotice />
+
     return (
         <ProjectProvider>
             <SiteProvider>

@@ -88,10 +88,24 @@
     margin: 0;
 }
 
+/* 4열 고정. auto-fit 은 카드 수에 따라 열이 들쭉날쭉해진다.
+ * 좁은 화면에서는 아래 미디어쿼리로 줄인다. */
 .system-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    grid-template-columns: repeat(4, 1fr);
     gap: 1.5rem;
+}
+
+@media (max-width: 1200px) {
+    .system-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 700px) {
+    .system-grid {
+        grid-template-columns: 1fr;
+    }
 }
 
 .system-card {
