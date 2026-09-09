@@ -1,7 +1,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Printer, CheckCircle, Calendar, User } from 'lucide-react'
+import { ArrowLeft, Printer, CheckCircle, Calendar, User, FileSpreadsheet } from 'lucide-react'
 import './Page.css'
 import { apiClient } from '../lib/api'
 import type { RiskAssessment, RiskItem } from '../types/sms'
@@ -10,6 +10,11 @@ import Spinner from '../components/Spinner'
 // Extended type to include items
 interface RiskAssessmentDetail extends RiskAssessment {
     items: RiskItem[]
+}
+
+// 등급 배지 — 점수를 등급으로 치환한 결과를 색으로 구분한다.
+const GRADE_BADGE: Record<string, string> = {
+    A: 'badge-error', B: 'badge-warning', C: 'badge-primary', D: 'badge-tag', E: 'badge',
 }
 
 export default function RiskAssessmentDetailPage() {
@@ -50,6 +55,18 @@ export default function RiskAssessmentDetailPage() {
                         </span>
                     </div>
                 </div>
+                {/*
+                    현장 양식 그대로 내려받는다. 화면 인쇄로는 22열·병합셀 338개인
+                    현장 서식을 재현할 수 없어 실무에 쓸 수 없다(설계서 6.4).
+                */}
+                <button
+                    className="btn-primary"
+                    onClick={() => { window.location.href = `/api/sms/risk-assessments/${id}/export` }}
+                    style={{ marginRight: '0.6rem' }}
+                >
+                    <FileSpreadsheet size={18} />
+                    현장 양식 내려받기
+                </button>
                 <button className="btn-secondary" onClick={() => window.print()}>
                     <Printer size={18} />
                     인쇄
@@ -102,46 +119,54 @@ export default function RiskAssessmentDetailPage() {
                     <h3>상세 위험요소 및 대책</h3>
                 </div>
 
-                <div className="risk-items-container">
-                    {ra.items.map((item, idx) => {
-                        const riskLevel = item.frequency * item.severity
-                        return (
-                            <div key={item.id} className="risk-item-card">
-                                <div className="risk-item-header">
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                                        <span className="badge">{idx + 1}</span>
-                                        <h4 style={{ margin: 0 }}>{item.risk_factor}</h4>
-                                    </div>
-                                    <span className={`badge ${riskLevel >= 9 ? 'badge-alert' : riskLevel >= 4 ? 'badge-tag' : 'badge'}`}>
-                                        위험도 {riskLevel} ({riskLevel >= 9 ? '상' : riskLevel >= 4 ? '중' : '하'})
-                                    </span>
-                                </div>
-
-                                <div className="grid two">
-                                    <div>
-                                        <p className="task-id">발생 형태</p>
-                                        <p>{item.risk_type}</p>
-                                    </div>
-                                    <div>
-                                        <p className="task-id">빈도 × 강도</p>
-                                        <p>{item.frequency} × {item.severity} = <strong>{riskLevel}</strong></p>
-                                    </div>
-                                    <div className="full">
-                                        <p className="task-id">감소 대책</p>
-                                        <p style={{ color: '#9cf0c8' }}>{item.mitigation_measure}</p>
-                                    </div>
-                                    <div>
-                                        <p className="task-id">조치 담당자</p>
-                                        <p>{item.action_manager || '-'}</p>
-                                    </div>
-                                    <div>
-                                        <p className="task-id">조치 기한</p>
-                                        <p>{item.action_deadline ? new Date(item.action_deadline).toLocaleDateString() : '-'}</p>
-                                    </div>
-                                </div>
-                            </div>
-                        )
-                    })}
+                {/*
+                    현장 RA 양식과 같은 표 형태로 보여준다.
+                    카드로 펼치면 항목당 화면을 많이 먹어 한눈에 안 들어온다.
+                    열 구성은 현장 양식을 따랐다 — 세부공정·위험분류·위험발생 상황·재해형태·
+                    관련근거·현재조치·현재위험성·감소대책·개선 후 위험성.
+                */}
+                <div style={{ overflowX: 'auto' }}>
+                    <table className="ra-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                        <thead>
+                            <tr style={{ borderBottom: '2px solid var(--border)' }}>
+                                <th style={{ padding: '0.6rem 0.4rem', textAlign: 'left', width: 34 }}>#</th>
+                                <th style={{ padding: '0.6rem 0.4rem', textAlign: 'left', width: 72 }}>위험분류</th>
+                                <th style={{ padding: '0.6rem 0.4rem', textAlign: 'left', minWidth: 200 }}>위험발생 상황 및 결과</th>
+                                <th style={{ padding: '0.6rem 0.4rem', textAlign: 'left', width: 80 }}>재해형태</th>
+                                <th style={{ padding: '0.6rem 0.4rem', textAlign: 'left', minWidth: 130 }}>관련근거</th>
+                                <th style={{ padding: '0.6rem 0.4rem', textAlign: 'left', minWidth: 140 }}>현재의 안전보건조치</th>
+                                <th style={{ padding: '0.6rem 0.4rem', textAlign: 'center', width: 96 }}>현재위험성</th>
+                                <th style={{ padding: '0.6rem 0.4rem', textAlign: 'left', minWidth: 180 }}>위험성 감소대책</th>
+                                <th style={{ padding: '0.6rem 0.4rem', textAlign: 'center', width: 96 }}>개선 후</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {ra.items.map((item: any, idx: number) => {
+                                const v = (item.frequency || 0) * (item.severity || 0)
+                                const rv = (item.residual_frequency || 0) * (item.residual_severity || 0)
+                                const cell = { padding: '0.55rem 0.4rem', verticalAlign: 'top' as const, borderBottom: '1px solid var(--border)' }
+                                return (
+                                    <tr key={item.id}>
+                                        <td style={{ ...cell, color: 'var(--text-tertiary)' }}>{idx + 1}</td>
+                                        <td style={cell}>{item.hazard_class || '-'}</td>
+                                        <td style={{ ...cell, lineHeight: 1.5 }}>{item.risk_factor}</td>
+                                        <td style={cell}>{item.risk_type || '-'}</td>
+                                        <td style={{ ...cell, fontSize: '0.78rem', color: 'var(--text-tertiary)' }}>{item.legal_basis || '-'}</td>
+                                        <td style={{ ...cell, fontSize: '0.8rem' }}>{item.current_control || '-'}</td>
+                                        <td style={{ ...cell, textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                            {item.frequency}×{item.severity}={v}
+                                            {item.grade && <><br /><span className={`badge ${GRADE_BADGE[item.grade] || 'badge-tag'}`}>{item.grade}</span></>}
+                                        </td>
+                                        <td style={{ ...cell, color: '#9cf0c8', lineHeight: 1.5 }}>{item.mitigation_measure || '-'}</td>
+                                        <td style={{ ...cell, textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                            {rv ? <>{item.residual_frequency}×{item.residual_severity}={rv}<br />
+                                                <span className={`badge ${GRADE_BADGE[item.residual_grade] || 'badge-tag'}`}>{item.residual_grade}</span></> : '-'}
+                                        </td>
+                                    </tr>
+                                )
+                            })}
+                        </tbody>
+                    </table>
                 </div>
             </section>
         </div>

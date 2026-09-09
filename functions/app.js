@@ -2261,7 +2261,8 @@ app.get('/api/sms/risk-assessments/:id', async (req, res) => {
         if (raRes.rows.length === 0) return res.status(404).json({ error: 'Assessment not found' })
 
         // Get Risk Items
-        const itemsRes = await pool.query('SELECT * FROM sms_risk_items WHERE assessment_id = $1 ORDER BY risk_factor', [id])
+        // 작성 순서를 유지한다. 이름순으로 섞이면 현장 양식과 순서가 달라진다.
+        const itemsRes = await pool.query('SELECT * FROM sms_risk_items WHERE assessment_id = $1 ORDER BY sort_order NULLS LAST, created_at', [id])
 
         res.json({
             ...raRes.rows[0],
@@ -2270,6 +2271,43 @@ app.get('/api/sms/risk-assessments/:id', async (req, res) => {
     } catch (err) {
         console.error(err)
         res.status(500).json({ error: 'Failed to fetch assessment details' })
+    }
+})
+
+
+// 위험성평가서를 현장 양식 그대로 엑셀로 내려받는다.
+// 화면에서 HTML 로 그려 인쇄하면 22열·병합셀 338개인 현장 양식을 재현할 수 없다.
+// 원본 xlsx 에 값만 채워 서식을 그대로 유지한다(설계서 6.4).
+app.get('/api/sms/risk-assessments/:id/export', async (req, res) => {
+    try {
+        const { id } = req.params
+        const raRes = await pool.query(`
+            SELECT r.*, p.name AS project_name
+              FROM sms_risk_assessments r
+         LEFT JOIN projects p ON p.id = r.project_id
+             WHERE r.id = $1`, [id])
+        if (raRes.rows.length === 0) return res.status(404).json({ error: '평가서를 찾을 수 없습니다' })
+
+        const items = await pool.query(`
+            SELECT i.*, l.name AS location_name
+              FROM sms_risk_items i
+         LEFT JOIN location l ON l.id = i.location_id
+             WHERE i.assessment_id = $1
+             ORDER BY i.sort_order NULLS LAST, i.created_at`, [id])
+
+        const { buildRaWorkbook } = require('./lib/ra-export')
+        const buf = await buildRaWorkbook({ ...raRes.rows[0], items: items.rows })
+
+        const ra = raRes.rows[0]
+        const dt = (ra.date ? new Date(ra.date) : new Date()).toISOString().slice(0, 10)
+        const safe = String(ra.process_name || '').replace(/[\/:*?"<>|]/g, '_')
+        const name = `위험성평가표_${safe}_${dt}.xlsx`
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(name)}`)
+        res.send(Buffer.from(buf))
+    } catch (err) {
+        console.error('[RA export]', err)
+        res.status(500).json({ error: '엑셀 생성 실패', details: err.message })
     }
 })
 
