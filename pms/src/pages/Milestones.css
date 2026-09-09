@@ -285,3 +285,15 @@
   background: rgba(198, 213, 240, 0.85);
   vertical-align: 1px;
 }
+
+.ms-ev.patrol {
+  color: #cfe0fa;
+  background: rgba(99, 164, 255, 0.16);
+  border: 1px solid rgba(99, 164, 255, 0.45);
+}
+
+.ms-ev.check {
+  color: #d7f0ff;
+  background: rgba(34, 211, 238, 0.14);
+  border: 1px solid rgba(34, 211, 238, 0.45);
+}

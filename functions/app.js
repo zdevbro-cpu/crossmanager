@@ -2107,8 +2107,8 @@ app.get('/api/projects', async (req, res) => {
  * 원본은 그대로 둔다. 여기서는 읽어서 같은 모양으로 바꿔 줄 뿐이다.
  * 일정 전용 테이블을 새로 만들면 두 벌을 맞춰야 하고 반드시 어긋난다.
  *
- * 날짜 컬럼이 없는 것(패트롤·체크리스트)은 넣지 않는다. created_at 을
- * 일정으로 쓰면 "언제 하기로 한 일"이 아니라 "언제 입력했는지"가 찍힌다.
+ * 패트롤·체크리스트는 실시일(date)을 쓴다. created_at 은 입력 시각이라
+ * 어제 돈 순찰을 오늘 입력하면 날짜가 하루 어긋난다.
  */
 app.get('/api/calendar', async (req, res) => {
     try {
@@ -2160,6 +2160,22 @@ app.get('/api/calendar', async (req, res) => {
                       WHERE ($1::uuid IS NULL OR r.project_id = $1)
                         AND COALESCE(r.period_from, r.date) <= $3::date
                         AND COALESCE(r.period_to, r.period_from, r.date) >= $2::date`),
+
+            await q(`SELECT pt.id::text, 'PATROL' AS source,
+                            COALESCE(NULLIF(pt.issue_type,''), '안전 순찰') AS title,
+                            TO_CHAR(pt.date,'YYYY-MM-DD') AS start, TO_CHAR(pt.date,'YYYY-MM-DD') AS "end",
+                            p.code AS project_code, p.name AS project_name
+                       FROM sms_patrols pt LEFT JOIN projects p ON p.id = pt.project_id
+                      WHERE ($1::uuid IS NULL OR pt.project_id = $1)
+                        AND pt.date BETWEEN $2::date AND $3::date`),
+
+            await q(`SELECT ck.id::text, 'CHECKLIST' AS source,
+                            COALESCE(NULLIF(ck.title,''), '체크리스트') AS title,
+                            TO_CHAR(ck.date,'YYYY-MM-DD') AS start, TO_CHAR(ck.date,'YYYY-MM-DD') AS "end",
+                            p.code AS project_code, p.name AS project_name
+                       FROM sms_checklists ck LEFT JOIN projects p ON p.id = ck.project_id
+                      WHERE ($1::uuid IS NULL OR ck.project_id = $1)
+                        AND ck.date BETWEEN $2::date AND $3::date`),
 
             await q(`SELECT w.id::text, 'EXPIRY' AS source,
                             COALESCE(NULLIF(w.title,''), '만료 예정') AS title,

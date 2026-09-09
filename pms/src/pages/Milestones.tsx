@@ -37,7 +37,7 @@ const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토']
 // 알 수 없어진다.
 interface CalEvent {
     id: string
-    source: 'MILESTONE' | 'TBM' | 'EDU' | 'RA' | 'EXPIRY'
+    source: 'MILESTONE' | 'TBM' | 'EDU' | 'RA' | 'PATROL' | 'CHECKLIST' | 'EXPIRY'
     title: string
     start: string
     end: string
@@ -58,6 +58,8 @@ const SOURCE_META: Record<string, { label: string; cls: string }> = {
     TBM: { label: 'TBM', cls: 'tbm' },
     EDU: { label: '교육', cls: 'edu' },
     RA: { label: '위험성평가', cls: 'ra' },
+    PATROL: { label: '순찰', cls: 'patrol' },
+    CHECKLIST: { label: '점검', cls: 'check' },
     EXPIRY: { label: '만료', cls: 'expiry' },
 }
 
