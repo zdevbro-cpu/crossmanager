@@ -25,26 +25,57 @@ const createMasterRouter = (pool) => {
 
     // ── 코드 ────────────────────────────────────────────────
     // 화면의 드롭다운은 전부 여기서 받아 간다. 코드값을 소스에 박지 않는다.
+    //
+    // module 파라미터
+    //   코드는 테이블 하나에 모아 두고 소유 모듈만 나눈다. 조회할 때는
+    //   '해당 모듈 + COMMON' 을 함께 돌려준다. COMMON(업체구분·위치단계 등)은
+    //   company/location 처럼 여러 모듈이 함께 쓰는 마스터가 참조하므로
+    //   한 모듈이 가져갈 수 없고, 편집도 본사 마스터 화면에서만 한다.
+    const MODULES = ['COMMON', 'SMS', 'DMS', 'PMS', 'EMS', 'SWMS']
+    const askedModule = (m) => (m && MODULES.includes(String(m).toUpperCase()))
+        ? String(m).toUpperCase()
+        : null
+
     router.get('/codes', async (req, res) => {
         try {
             const { group } = req.query
+            const mod = askedModule(req.query.module)
             const { rows } = await pool.query(`
-                SELECT group_code, code, name, sort_order, attr
-                  FROM code
-                 WHERE is_active AND ($1::text IS NULL OR group_code = $1)
-                 ORDER BY group_code, sort_order`, [group || null])
+                SELECT c.group_code, c.code, c.name, c.sort_order, c.attr, g.module
+                  FROM code c JOIN code_group g ON g.group_code = c.group_code
+                 WHERE c.is_active
+                   AND ($1::text IS NULL OR c.group_code = $1)
+                   AND ($2::text IS NULL OR g.module IN ($2, 'COMMON'))
+                 ORDER BY c.group_code, c.sort_order`, [group || null, mod])
             res.json(rows)
         } catch (e) { fail(res, e, '코드 조회 실패') }
     })
 
     router.get('/code-groups', async (req, res) => {
         try {
+            const mod = askedModule(req.query.module)
             const { rows } = await pool.query(`
-                SELECT g.group_code, g.group_name, count(c.id)::int AS code_count
+                SELECT g.group_code, g.group_name, g.description, g.module, g.is_system,
+                       count(c.id)::int AS code_count,
+                       -- 자기 모듈 것만 고칠 수 있다. COMMON 은 읽기 전용으로 보여 준다.
+                       ($1::text IS NULL OR g.module = $1) AS editable
                   FROM code_group g LEFT JOIN code c ON c.group_code = g.group_code AND c.is_active
-                 GROUP BY g.group_code, g.group_name ORDER BY g.group_code`)
+                 WHERE ($1::text IS NULL OR g.module IN ($1, 'COMMON'))
+                 GROUP BY g.group_code, g.group_name, g.description, g.module, g.is_system
+                 ORDER BY CASE WHEN g.module = 'COMMON' THEN 1 ELSE 0 END, g.group_code`, [mod])
             res.json(rows)
         } catch (e) { fail(res, e, '코드그룹 조회 실패') }
+    })
+
+    // 모듈 목록 — 마스터 화면의 모듈 선택기가 쓴다.
+    router.get('/code-modules', async (req, res) => {
+        try {
+            const { rows } = await pool.query(`
+                SELECT module, count(*)::int AS group_count
+                  FROM code_group GROUP BY module
+                 ORDER BY CASE WHEN module = 'COMMON' THEN 0 ELSE 1 END, module`)
+            res.json(rows)
+        } catch (e) { fail(res, e, '코드 모듈 조회 실패') }
     })
 
     // ── 발주처 ──────────────────────────────────────────────
