@@ -17,6 +17,7 @@ const SYSTEMS = [
         acronym: 'PMS',
         description: '', // description removed from UI usage
         icon: <PieChart size={32} />,
+        accent: '#60a5fa',        // 파랑 — 프로젝트
         url: import.meta.env.PROD ? '/pms' : import.meta.env.VITE_APP_URL_PMS
     },
     {
@@ -25,6 +26,7 @@ const SYSTEMS = [
         acronym: 'DMS',
         description: '',
         icon: <Folder size={32} />,
+        accent: '#34d399',        // 초록 — 문서
         url: import.meta.env.PROD ? '/dms' : import.meta.env.VITE_APP_URL_DMS
     },
     {
@@ -33,6 +35,7 @@ const SYSTEMS = [
         acronym: 'SMS',
         description: '',
         icon: <ShieldCheck size={32} />,
+        accent: '#fbbf24',        // 주황 — 안전
         url: import.meta.env.PROD ? '/sms' : import.meta.env.VITE_APP_URL_SMS
     },
     {
@@ -41,6 +44,7 @@ const SYSTEMS = [
         acronym: 'EMS',
         description: '',
         icon: <Truck size={32} />,
+        accent: '#a78bfa',        // 보라 — 장비
         url: import.meta.env.PROD ? '/ems' : import.meta.env.VITE_APP_URL_EMS
     },
     {
@@ -49,6 +53,7 @@ const SYSTEMS = [
         acronym: 'SWMS',
         description: '',
         icon: <FileText size={32} />,
+        accent: '#22d3ee',        // 청록 — 스크랩·폐기물
         url: import.meta.env.PROD ? '/swms' : import.meta.env.VITE_APP_URL_SWMS
     }
 ];
@@ -146,7 +151,14 @@ export default function Dashboard() {
                                 className={`system-card ${allowed ? 'allowed' : 'locked'}`}
                                 onClick={() => handleSystemClick(sys, allowed)}
                             >
-                                <div className="card-icon-wrapper">
+                                <div
+                                    className="card-icon-wrapper"
+                                    style={allowed ? {
+                                        color: sys.accent,
+                                        // 배경은 같은 색을 옅게 깔아 아이콘만 튀지 않게 한다.
+                                        background: `${sys.accent}1f`,
+                                    } : undefined}
+                                >
                                     {sys.icon}
                                 </div>
                                 <div className="card-info">
