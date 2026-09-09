@@ -35,6 +35,8 @@ interface HazardItem {
 interface WorkType {
   work_type_code: string
   name: string
+  active_count?: number      // 검수 통과분 — 담을 게 있는지 미리 보여준다
+  pending_count?: number
 }
 
 const GRADE_BADGE: Record<string, string> = {
@@ -156,7 +158,7 @@ export default function HazardLibraryPage() {
       <header className="page-header">
         <div>
           <p className="eyebrow">SMS Module</p>
-          <h1>위험요인 라이브러리</h1>
+          <h1>위험요인 라이브러리 <span className="muted" style={{ fontSize: '1rem', fontWeight: 400 }}>({items.length}건)</span></h1>
           <p className="muted">현장 위험성평가에서 검증된 항목을 골라 담습니다. 문서를 통째로 복사하지 않고 항목 단위로만 가져옵니다.</p>
         </div>
         {pickedIds.length > 0 && (
@@ -169,7 +171,11 @@ export default function HazardLibraryPage() {
       <div className="card" style={{ display: 'flex', gap: '0.8rem', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
         <select className="input" value={workType} onChange={e => setWorkType(e.target.value)} style={{ width: 'auto', minWidth: 180 }}>
           <option value="">공종 전체</option>
-          {workTypes.map(w => <option key={w.work_type_code} value={w.work_type_code}>{w.name}</option>)}
+          {workTypes.map(w => (
+            <option key={w.work_type_code} value={w.work_type_code}>
+              {w.name}{w.active_count != null ? ` (${w.active_count})` : ''}
+            </option>
+          ))}
         </select>
         <input
           className="input"

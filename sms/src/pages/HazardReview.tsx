@@ -144,7 +144,7 @@ export default function HazardReviewPage() {
       <header className="page-header">
         <div>
           <p className="eyebrow">SMS Module</p>
-          <h1>위험요인 검수</h1>
+          <h1>위험요인 검수 <span className="muted" style={{ fontSize: '1rem', fontWeight: 400 }}>(대기 {total}건)</span></h1>
           <p className="muted">현장 위험성평가 파일에서 추출한 항목을 확인하고 통과시킵니다. 통과한 항목만 라이브러리에 노출됩니다.</p>
         </div>
         <div style={{ display: 'flex', gap: '0.6rem' }}>

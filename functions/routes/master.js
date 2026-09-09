@@ -213,8 +213,17 @@ const createMasterRouter = (pool) => {
     // ── 공종 · 위험요인 라이브러리 ──────────────────────────
     router.get('/work-types', async (req, res) => {
         try {
-            const { rows } = await pool.query(
-                'SELECT * FROM work_type WHERE is_active ORDER BY sort_order, name')
+            // 검수를 통과한 항목 수를 함께 준다.
+            // 공종을 고를 때 담을 게 있는지 미리 알 수 있어야 한다.
+            const { rows } = await pool.query(`
+                SELECT w.*,
+                       count(h.id) FILTER (WHERE h.active AND h.deleted_at IS NULL)::int AS active_count,
+                       count(h.id) FILTER (WHERE NOT h.active AND h.deleted_at IS NULL)::int AS pending_count
+                  FROM work_type w
+             LEFT JOIN hazard_item h ON h.work_type_code = w.work_type_code
+                 WHERE w.is_active
+                 GROUP BY w.id
+                 ORDER BY w.sort_order, w.name`)
             res.json(rows)
         } catch (e) { fail(res, e, '공종 조회 실패') }
     })

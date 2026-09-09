@@ -230,7 +230,9 @@ export default function RiskAssessmentFormPage() {
                         >
                             <option value="">공종 선택</option>
                             {workTypes.map(w => (
-                                <option key={w.work_type_code} value={w.work_type_code}>{w.name}</option>
+                                <option key={w.work_type_code} value={w.work_type_code}>
+                                    {w.name}{w.active_count != null ? ` (${w.active_count}건)` : ''}
+                                </option>
                             ))}
                         </select>
                         <button type="button" className="btn-secondary" onClick={loadWorkTypeSet} disabled={loadingSet}>
