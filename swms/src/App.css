@@ -144,13 +144,16 @@
     color: #9cf0c8;
 }
 
+/* 본문 폭 상한을 두지 않는다.
+ * max-width 를 두면 남는 자리가 오른쪽에 통째로 비고, .content 가 스크롤
+ * 컨테이너라 스크롤바도 화면 오른쪽 끝이 아니라 그 폭 지점에 생긴다.
+ * SWMS 대시보드처럼 내용이 긴 화면에서 특히 눈에 띈다. */
 .content {
     grid-row: 2;
     grid-column: 2;
     overflow-y: auto;
-    max-width: 1400px;
     width: 100%;
-    margin: 0;   /* 좌측정렬. 사이드바가 왼쪽을 차지해 중앙정렬하면 우측 여백만 커진다. */
+    margin: 0;
     padding: 0.75rem 1.5rem 1.5rem;
 }
 
