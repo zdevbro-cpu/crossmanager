@@ -2666,18 +2666,23 @@ app.get('/api/sms/patrols', async (req, res) => {
 // 2. Create Patrol
 app.post('/api/sms/patrols', async (req, res) => {
     try {
-        const { projectId, location, issueType, severity, description, actionRequired } = req.body
+        // date 는 순찰을 실제로 돈 날이다. 안 보내면 오늘로 둔다.
+        // created_at(입력 시각)을 그대로 쓰면 어제 돈 순찰을 오늘 입력했을 때
+        // 달력에 하루 뒤로 찍힌다.
+        const { projectId, location, issueType, severity, description, actionRequired,
+                date, createdBy } = req.body
 
         const query = `
             INSERT INTO sms_patrols (
-                project_id, location, issue_type, severity, description, 
+                project_id, date, location, issue_type, severity, description,
                 action_required, status, created_by, created_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, 'OPEN', '??전관리자', NOW())
+            ) VALUES ($1, COALESCE($2::date, CURRENT_DATE), $3, $4, $5, $6, $7, 'OPEN', $8, NOW())
             RETURNING *
         `
 
         const { rows } = await pool.query(query, [
-            projectId, location, issueType, severity, description, actionRequired
+            projectId, date || null, location, issueType, severity, description,
+            actionRequired, createdBy || '안전관리자'
         ])
 
         res.status(201).json(rows[0])

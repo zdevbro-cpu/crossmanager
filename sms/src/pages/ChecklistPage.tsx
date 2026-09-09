@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import axios from 'axios'
 import { Plus, FileText, AlertTriangle, Search, X } from 'lucide-react'
 import ChecklistExecutor from '../components/ChecklistExecutor'
+import { useProject } from '../contexts/ProjectContext'
+import { useAuth } from '../hooks/useAuth'
 
 interface Checklist {
     id: string
@@ -31,7 +33,11 @@ export default function ChecklistPage() {
     const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false)
     const [filterStatus, setFilterStatus] = useState('ALL') // ALL, SUBMITTED
 
-    const projectId = 'p1' // Mock Project ID
+    // 상단에서 고른 현장에 저장한다. 예전에는 'p1' 이 박혀 있어
+    // 조회도 저장도 되지 않았다.
+    const { selectedProjectId } = useProject()
+    const { user } = useAuth()
+    const projectId = selectedProjectId && selectedProjectId !== 'ALL' ? selectedProjectId : ''
 
     // Fetch Data
     const fetchData = async () => {
@@ -182,6 +188,8 @@ export default function ChecklistPage() {
             {isExecutorOpen && selectedTemplateId && (
                 <ChecklistExecutor
                     templateId={selectedTemplateId}
+                    projectId={projectId}
+                    author={user?.email || ''}
                     onClose={handleExecutorClose}
                 />
             )}

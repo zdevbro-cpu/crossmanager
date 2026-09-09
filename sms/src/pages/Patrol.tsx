@@ -20,6 +20,7 @@ interface Patrol {
 
 interface PatrolForm {
   projectId: string
+  date: string
   location: string
   issueType: string
   severity: string
@@ -83,7 +84,10 @@ export default function PatrolPage() {
           <h1>안전 순찰 (Patrol)</h1>
           <p className="muted">현장 순찰 중 발견된 부적합 사항 및 우수 사례를 기록합니다.</p>
         </div>
-        <button className="btn-primary" onClick={() => setIsModalOpen(true)}>
+        <button className="btn-primary" onClick={() => {
+          reset({ date: new Date().toISOString().slice(0, 10) } as any)
+          setIsModalOpen(true)
+        }}>
           <Plus size={18} /> 순찰 기록
         </button>
       </header>
@@ -132,11 +136,19 @@ export default function PatrolPage() {
             </header>
 
             <form onSubmit={handleSubmit(onSubmit)} className="modal-body">
-              <div className="form-group">
-                <label>관련 프로젝트</label>
-                <select className="input" {...register('projectId', { required: true })}>
-                  {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
+              <div className="form-grid">
+                <div className="form-group">
+                  <label>관련 프로젝트</label>
+                  <select className="input" {...register('projectId', { required: true })}>
+                    {projects.map(p => <option key={p.id} value={p.id}>{p.code ? `[${p.code}] ` : ''}{p.name}</option>)}
+                  </select>
+                </div>
+                <div className="form-group">
+                  {/* 어제 돈 순찰을 오늘 입력하는 일이 흔하다.
+                      입력한 날이 아니라 실제로 돈 날을 적는다. */}
+                  <label>순찰 일자</label>
+                  <input className="input" type="date" {...register('date', { required: true })} />
+                </div>
               </div>
 
               <div className="form-grid">

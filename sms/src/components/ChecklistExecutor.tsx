@@ -8,10 +8,19 @@ interface Template {
     items: { id: string, content: string }[];
 }
 
-export default function ChecklistExecutor({ templateId, onClose }: { templateId: string, onClose: () => void }) {
+export default function ChecklistExecutor({ templateId, projectId, author, onClose }: {
+    templateId: string
+    projectId: string
+    author?: string
+    onClose: () => void
+}) {
     const [template, setTemplate] = useState<Template | null>(null)
     const [answers, setAnswers] = useState<Record<string, string>>({})
     const [loading, setLoading] = useState(true)
+
+    // 점검을 실제로 한 날. 어제 한 점검을 오늘 입력하는 일이 흔하다.
+    // 기본값은 오늘이고 바꿀 수 있다.
+    const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
 
     useEffect(() => {
         const fetchTpl = async () => {
@@ -41,18 +50,20 @@ export default function ChecklistExecutor({ templateId, onClose }: { templateId:
     const handleSubmit = async () => {
         if (!template) return;
 
+        if (!projectId) { alert('프로젝트를 먼저 선택하십시오.'); return }
         if (!confirm('제출 하시겠습니까? 제출 후에는 수정할 수 없습니다.')) return;
 
         try {
+            // 프로젝트는 화면에서 고른 것을 쓴다. 예전에는 'p1' 이 박혀 있어
+            // 저장 자체가 되지 않았다(uuid 가 아니다).
             await axios.post('/api/sms/checklists/submit', {
-                project_id: 'p1', // Mock Project
+                project_id: projectId,
                 template_id: template.id,
                 title: template.title,
+                date,
                 results: answers,
                 meta_info: {
-                    author: '홍길동(현장소장)',
-                    location: { lat: 37.5, lng: 127.0, site: 'A-Zone' },
-                    weather: { condition: 'Sunny', temp: 24 }
+                    author: author || '미상',
                 }
             })
             alert('안전 점검 결과가 제출되었습니다.')
@@ -74,6 +85,18 @@ export default function ChecklistExecutor({ templateId, onClose }: { templateId:
                     <button className="icon-button" onClick={onClose}><X size={24} /></button>
                 </header>
                 <div className="modal-body">
+                    {/* 점검 일자를 먼저 정한다. 어제 한 점검을 오늘 입력하면
+                        입력일로 남아 달력에 하루 뒤로 찍힌다. */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '1rem' }}>
+                        <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>점검 일자</label>
+                        <input
+                            className="input-std"
+                            type="date"
+                            value={date}
+                            onChange={e => setDate(e.target.value)}
+                            style={{ width: 170 }}
+                        />
+                    </div>
                     <div className="alert-box" style={{ background: 'rgba(59, 130, 246, 0.1)', color: '#60a5fa', padding: '1rem', borderRadius: '8px', marginBottom: '1rem', fontSize: '0.9rem', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
                         ℹ️ 이 화면은 현장 작업자가 태블릿/모바일에서 보는 화면입니다. <br />
                         제출 시 <strong>'불변 스냅샷'</strong>이 생성되어 PMS로 전송됩니다.
