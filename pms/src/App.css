@@ -420,3 +420,32 @@
     background: rgba(255, 255, 255, 0.08);
   }
 }
+
+/* 스크롤바 — 브라우저 기본값이 밝은 회색이라 어두운 화면에서 밝게 튄다.
+ * 화면 색과 같은 계열로 낮춘다. Firefox 는 scrollbar-color, 나머지는 ::-webkit. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) rgba(10, 16, 32, 0.6);
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: rgba(10, 16, 32, 0.6);
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.32);
+}
+
+*::-webkit-scrollbar-corner {
+  background: rgba(10, 16, 32, 0.6);
+}

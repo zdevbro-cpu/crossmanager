@@ -569,10 +569,11 @@ select.input option {
 }
 
 /* Page Styles */
-/* 좌측정렬. max-width + margin:0 auto 로 두면 본문이 화면 가운데로 몰리고
- * 오른쪽에 빈 자리가 통째로 남는다. 폭은 .content 가 정한다. */
+/* 바깥 여백은 .content 한 곳에서만 준다(1.5rem).
+ * 여기서 2rem 을 더 주면 SMS 만 3.5rem 씩 안으로 들어가 다른 모듈과 어긋난다.
+ * 폭과 정렬도 .content 가 정한다. */
 .page {
-  padding: 2rem;
+  padding: 0;
   margin: 0;
 }
 

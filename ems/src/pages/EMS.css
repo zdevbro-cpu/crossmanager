@@ -1,11 +1,11 @@
 /* EMS Specific Styles */
 
 /* Page Container */
-/* 좌측정렬. max-width + margin:0 auto 로 두면 본문이 화면 가운데로 몰리고
- * 오른쪽에 빈 자리가 통째로 남는다. 폭은 .content 가 정한다. */
+/* 바깥 여백은 .content 한 곳에서만 준다(1.5rem). 여기서 좌우를 더 주면
+ * EMS 만 3rem 씩 들어가 다른 모듈과 어긋난다. 폭과 정렬도 .content 가 정한다. */
 .page {
     margin: 0;
-    padding: 0 1.5rem;
+    padding: 0;
 }
 
 /* Form Grid - Responsive 2-3 columns */
