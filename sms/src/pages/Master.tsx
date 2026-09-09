@@ -451,11 +451,14 @@ function CodePanel({ onCount }: { onCount: (n: number) => void }) {
                     <table className="master-table">
                         <thead>
                             <tr>
+                                {/* 속성에는 위험성 등급의 점수 구간처럼 긴 값이 들어간다.
+                                    폭을 고정하면 두 줄로 접힌다. 명칭을 고정하고 속성이
+                                    남는 자리를 쓰게 둔다. */}
                                 <th style={{ width: 150 }}>코드</th>
-                                <th>명칭</th>
-                                <th style={{ width: 70, textAlign: 'right' }}>순서</th>
-                                <th style={{ width: 190 }}>속성</th>
-                                {current?.editable && <th style={{ width: 110 }}>작업</th>}
+                                <th style={{ width: 200 }}>명칭</th>
+                                <th style={{ width: 60, textAlign: 'right' }}>순서</th>
+                                <th>속성</th>
+                                {current?.editable && <th style={{ width: 90 }}>작업</th>}
                             </tr>
                         </thead>
                         <tbody>
