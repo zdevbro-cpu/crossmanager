@@ -37,6 +37,28 @@
                 "source": "**",
                 "destination": "/index.html"
             }
+        ],
+        "headers": [
+            {
+                "//": "각 모듈 index.html 은 캐시하지 않는다. Firebase 기본값이 max-age=3600 이라 배포해도 최대 1시간 동안 이전 번들이 떴다. 헤더는 리라이트 목적지가 아니라 요청 경로에 걸린다.",
+                "source": "**",
+                "headers": [
+                    {
+                        "key": "Cache-Control",
+                        "value": "no-cache, max-age=0, must-revalidate"
+                    }
+                ]
+            },
+            {
+                "//": "해시가 붙은 자산은 내용이 바뀌면 이름도 바뀐다. 오래 캐시해도 안전하다. 뒤에 적은 규칙이 이기므로 여기 둔다.",
+                "source": "**/assets/**",
+                "headers": [
+                    {
+                        "key": "Cache-Control",
+                        "value": "public, max-age=31536000, immutable"
+                    }
+                ]
+            }
         ]
     }
 }
