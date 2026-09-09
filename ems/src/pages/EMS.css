@@ -1,9 +1,10 @@
 /* EMS Specific Styles */
 
-/* Page Container with Max Width */
+/* Page Container */
+/* 좌측정렬. max-width + margin:0 auto 로 두면 본문이 화면 가운데로 몰리고
+ * 오른쪽에 빈 자리가 통째로 남는다. 폭은 .content 가 정한다. */
 .page {
-    max-width: 1400px;
-    margin: 0 auto;
+    margin: 0;
     padding: 0 1.5rem;
 }
 

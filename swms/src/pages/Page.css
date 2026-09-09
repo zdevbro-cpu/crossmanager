@@ -558,10 +558,11 @@ select.input option {
 }
 
 /* Page Styles */
+/* 좌측정렬. max-width + margin:0 auto 로 두면 본문이 화면 가운데로 몰리고
+ * 오른쪽에 빈 자리가 통째로 남는다. 폭은 .content 가 정한다. */
 .page {
   padding: 2rem;
-  max-width: 1200px;
-  margin: 0 auto;
+  margin: 0;
 }
 
 .page-header {
