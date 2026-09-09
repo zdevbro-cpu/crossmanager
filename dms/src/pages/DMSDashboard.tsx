@@ -478,6 +478,17 @@ export default function DMSDashboard() {
         return String(raw).split(',').map(t => t.trim()).filter(Boolean)
     }
 
+    // 문서 바로보기. 상세 패널 버튼과 목록 더블클릭이 같은 동작을 쓴다.
+    // Word·Excel 은 HTML 로 변환해 보여 주고, 나머지는 파일 그대로 연다.
+    const openDocView = (doc: { id: string; name: string }) => {
+        const ext = doc.name?.toLowerCase()?.split('.').pop()
+        const isOA = ['docx', 'doc', 'xlsx', 'xls'].includes(ext || '')
+        const url = isOA
+            ? `/api/docview/html/${doc.id}`
+            : `/api/docview/${doc.id}/${encodeURIComponent(doc.name)}`
+        openPrintWindow(`${window.location.origin}${url}`, doc.name)
+    }
+
     const renderDocItem = (doc: any) => (
         <div
             key={doc.id}
@@ -485,6 +496,8 @@ export default function DMSDashboard() {
             onDragStart={(e) => e.dataTransfer.setData('docId', doc.id)}
             className={`doc-item ${selectedDocId === doc.id ? 'selected' : ''} ${clipboard?.docId === doc.id && clipboard?.action === 'cut' ? 'cutting' : ''}`}
             onClick={(e) => { e.stopPropagation(); setSelectedDocId(doc.id); setShowHistory(false) }}
+            onDoubleClick={(e) => { e.stopPropagation(); openDocView(doc) }}
+            title="더블클릭하면 문서를 엽니다"
             onContextMenu={(e) => handleContextMenu(e, 'doc', doc.id)}
         >
             <div className="doc-visual">
@@ -864,12 +877,10 @@ export default function DMSDashboard() {
                                         <Lock size={15}/> 체크아웃 (수정 잠금)
                                     </button>
                                 )}
-                                <button className="btn-primary" style={{ width: '100%', height: '44px', borderRadius: '12px' }} onClick={() => {
-                                    const ext = selectedDoc.name.toLowerCase()?.split('.').pop()
-                                    const isOA = ['docx', 'doc', 'xlsx', 'xls'].includes(ext || '')
-                                    const url = isOA ? `/api/docview/html/${selectedDoc.id}` : `/api/docview/${selectedDoc.id}/${encodeURIComponent(selectedDoc.name)}`
-                                    openPrintWindow(`${window.location.origin}${url}`, selectedDoc.name)
-                                }}><ExternalLink size={16}/> 문서 바로보기</button>
+                                <button className="btn-primary" style={{ width: '100%', height: '44px', borderRadius: '12px' }}
+                                    onClick={() => openDocView(selectedDoc)}>
+                                    <ExternalLink size={16}/> 문서 바로보기
+                                </button>
                                 <button style={{ width: '100%', height: '40px', borderRadius: '12px', background: 'transparent', border: '1px solid #495057', color: '#e9ecef', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '0.85rem', whiteSpace: 'nowrap' }} onClick={() => onLoadHistory(selectedDoc.id)}>
                                     <History size={14}/> {showHistory ? '버전 이력 닫기' : '버전 히스토리'}
                                 </button>

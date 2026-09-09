@@ -45,7 +45,6 @@ function getPortalHomeUrl() {
 
 
 const ContractsPage = lazy(() => import('./pages/Contracts'))
-const DocumentsPage = lazy(() => import('./pages/Documents'))
 const OverviewPage = lazy(() => import('./pages/Overview'))
 const ProjectsPage = lazy(() => import('./pages/Projects'))
 const ReportsPage = lazy(() => import('./pages/Reports'))
@@ -75,8 +74,7 @@ const navGroups = [
   {
     label: '문서·보고',
     items: [
-      { path: '/documents', label: '문서관리', icon: FileText },
-      { path: '/reports', label: '보고서', icon: LayoutDashboard },
+      { path: '/reports', label: '보고서', icon: FileText },
     ],
   },
   {
@@ -222,14 +220,6 @@ function App() {
                   element={
                     <RequireAuth>
                       <ContractsPage />
-                    </RequireAuth>
-                  }
-                />
-                <Route
-                  path="/documents"
-                  element={
-                    <RequireAuth>
-                      <DocumentsPage />
                     </RequireAuth>
                   }
                 />
