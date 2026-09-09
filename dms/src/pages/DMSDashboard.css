@@ -1082,4 +1082,108 @@
     font-size: 1.1rem;
     color: #fff;
 }
-
+
+/* ── 문서 검색 필터 ────────────────────────────────────────
+ * 모달로 두면 걸어 둔 조건이 화면에서 사라져, 한 칸만 고치려 해도
+ * 모달을 다시 열어 전부 확인해야 한다. 화면에 붙여 접어 둔다. */
+.doc-filter {
+  margin-bottom: 24px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.doc-filter-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 12px 16px;
+  color: #4dabf7;
+  font-size: 0.95rem;
+  font-weight: 700;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.doc-filter-head:hover {
+  color: #74c0fc;
+}
+
+.doc-filter-badge {
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #4dabf7;
+  background: rgba(51, 154, 240, 0.15);
+}
+
+.doc-filter-chev {
+  margin-left: auto;
+  display: inline-flex;
+  color: #6d809b;
+}
+
+.doc-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+  padding: 4px 16px 12px;
+}
+
+.doc-filter-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.doc-filter-grid label > span {
+  font-size: 0.78rem;
+  color: #8ea3c0;
+}
+
+.doc-filter-grid .input-std {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.doc-filter-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px 14px;
+}
+
+.doc-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #c6d5f0;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  cursor: pointer;
+}
+
+.doc-filter-btn:hover {
+  color: #fff;
+  border-color: rgba(77, 171, 247, 0.6);
+}
+
+.doc-filter-btn.primary {
+  color: #fff;
+  background: #1c7ed6;
+  border-color: transparent;
+}
+
+.doc-filter-hint {
+  font-size: 0.78rem;
+  color: #6d809b;
+}

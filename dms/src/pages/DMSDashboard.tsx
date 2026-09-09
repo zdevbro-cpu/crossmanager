@@ -15,7 +15,8 @@ import { apiClient } from '../lib/api'
 import { openPrintWindow } from '../utils/printWindow'
 import './DMSDashboard.css'
 import DocumentUploadModal from '../components/DocumentUploadModal'
-import DocumentSearchModal, { type SearchFilters } from '../components/DocumentSearchModal'
+import type { SearchFilters } from '../components/DocumentSearchModal'
+import DocumentSearchBar from '../components/DocumentSearchBar'
 
 // --- Premium Custom Modals (Glassmorphism + Modern UI) ---
 const ModalConfirm = ({ isOpen, title, message, onConfirm, onClose, isDanger = false, confirmLabel = '확인', cancelLabel = '취소' }: any) => {
@@ -222,7 +223,9 @@ export default function DMSDashboard() {
     const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(['00_공무_행정']))
     const [ctxMenu, setCtxMenu] = useState<{ x: number, y: number, type: 'doc' | 'folder' | 'category', id: string, parentCat?: string } | null>(null)
 
-    const [isSearchOpen, setIsSearchOpen] = useState(false)
+    // 검색은 모달이 아니라 화면에 붙은 필터로 한다. 조건이 늘 보여야
+    // 한 칸만 고쳐 다시 찾을 수 있다.
+    const [isFilterOpen, setIsFilterOpen] = useState(false)
     const [searchResults, setSearchResults] = useState<any[] | null>(null)
 
     // --- Inline Edit States (detail panel) ---
@@ -241,7 +244,7 @@ export default function DMSDashboard() {
     const [inputModal, setInputModal] = useState({ isOpen: false, title: '', placeholder: '', onConfirm: (_v: string) => {} })
 
     useEffect(() => {
-        (window as any).openGlobalSearch = () => setIsSearchOpen(true)
+        (window as any).openGlobalSearch = () => setIsFilterOpen(true)
         return () => { delete (window as any).openGlobalSearch }
     }, [])
 
@@ -327,6 +330,8 @@ export default function DMSDashboard() {
             if (filters.officialName) params.officialName = filters.officialName
             if (filters.productionDate) params.productionDate = filters.productionDate
             if (filters.tags) params.tags = filters.tags
+            if (filters.client) params.client = filters.client
+            if (filters.projectYear) params.projectYear = filters.projectYear
             const res = await apiClient.get('/documents', { params })
             const docs = Array.isArray(res.data) ? res.data : (res.data.documents || [])
             setSearchResults(docs)
@@ -570,6 +575,14 @@ export default function DMSDashboard() {
                 </nav>
 
                 <main className="doc-panel card main-content-area" style={{ flex: 1, padding: '32px', overflowY: 'auto', background: '#0b1221' }}>
+                    <DocumentSearchBar
+                        open={isFilterOpen}
+                        onToggle={() => setIsFilterOpen(v => !v)}
+                        onSearch={handleSearch}
+                        onClear={() => setSearchResults(null)}
+                        resultCount={searchResults === null ? null : searchResults.length}
+                    />
+
                     {searchResults !== null ? (
                         <>
                             <div style={{ marginBottom: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -601,6 +614,33 @@ export default function DMSDashboard() {
                     <>
                     <div className="panel-header" style={{ marginBottom: '32px', display: 'flex', alignItems: 'center', gap: '10px', color: '#4dabf7', fontSize: '1.05rem', fontWeight: 700 }}>
                         <FolderOpen size={20} /> <span>{selectedProj?.name}</span> <ChevronRight size={16} /> <span style={{ color: '#fff' }}>{selectedCategory}</span>
+
+                        {/* 등록 버튼을 경로 옆에 둔다. 이미 고른 프로젝트·분류에 그대로 올라가므로
+                            모달에서 그 둘을 다시 고를 필요가 없다. 버튼 이름에 분류를 적어
+                            어디에 올라가는지 눌러보기 전에 알 수 있게 한다. */}
+                        <button
+                            onClick={() => setIsUploadOpen(true)}
+                            disabled={!selectedId}
+                            title={selectedId ? `${selectedCategory} 에 등록합니다` : '프로젝트를 먼저 선택하십시오'}
+                            style={{
+                                marginLeft: 'auto',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                height: '32px',
+                                padding: '0 14px',
+                                borderRadius: '8px',
+                                border: 'none',
+                                background: selectedId ? '#1c7ed6' : 'rgba(255,255,255,0.08)',
+                                color: selectedId ? '#fff' : '#6d809b',
+                                fontWeight: 600,
+                                fontSize: '0.85rem',
+                                cursor: selectedId ? 'pointer' : 'not-allowed',
+                                whiteSpace: 'nowrap',
+                            }}
+                        >
+                            <UploadCloud size={15} /> 이 분류에 문서 등록
+                        </button>
                     </div>
                     {selectedSubFolderId ? (
                         currentCategoryNode?.folders?.filter(f => f.id === selectedSubFolderId).map(f => renderFolderSection(f))
@@ -885,7 +925,6 @@ export default function DMSDashboard() {
                 </div>
             )}
             {isUploadOpen && <DocumentUploadModal isOpen={isUploadOpen} onClose={() => setIsUploadOpen(false)} initialProject={selectedProj?.name || ''} initialCategory={selectedCategory} />}
-            {isSearchOpen && <DocumentSearchModal isOpen={isSearchOpen} onClose={() => setIsSearchOpen(false)} onSearch={handleSearch} />}
             <CheckinModal
                 isOpen={isCheckinOpen}
                 doc={checkinTargetDoc}

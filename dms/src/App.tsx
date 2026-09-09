@@ -108,7 +108,7 @@ function App() {
                 onMouseOver={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)'; e.currentTarget.style.color = '#fff'; }}
                 onMouseOut={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = '#adb5bd'; }}
               >
-                <Search size={16} /> 통합 문서 검색
+                <Search size={16} /> 문서 검색
               </button>
 
 

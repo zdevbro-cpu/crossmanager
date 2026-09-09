@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { X, UploadCloud, FileText, CheckCircle2, Calendar, Tag } from 'lucide-react'
 import './DocumentUploadModal.css'
 
@@ -22,6 +22,14 @@ export default function DocumentUploadModal({ isOpen = true, onClose, initialPro
     // Metadata States
     const [project, setProject] = useState(initialProject || '')
     const [category, setCategory] = useState(initialCategory || '00_공무_행정')
+
+    // 모달을 열 때만 보고 있던 값으로 맞춘다. 열려 있는 동안 다시 덮으면
+    // 사용자가 바꾼 프로젝트·분류가 되돌아간다.
+    useEffect(() => {
+        if (!isOpen) return
+        if (initialProject) setProject(initialProject)
+        if (initialCategory) setCategory(initialCategory)
+    }, [isOpen])
     const [docType, setDocType] = useState('보고서')
     const [refDate, setRefDate] = useState(new Date().toISOString().split('T')[0])
     const [isClientSubmit, setIsClientSubmit] = useState(false)
@@ -144,11 +152,14 @@ export default function DocumentUploadModal({ isOpen = true, onClose, initialPro
                         <form className="meta-form" onSubmit={handleSubmit}>
                             <div className="form-group">
                                 <label>프로젝트</label>
-                                <input 
-                                    type="text" 
-                                    className="input-std" 
-                                    value={project} 
-                                    onChange={e => setProject(e.target.value)} 
+                                {/* 보고 있던 프로젝트를 기본값으로 채운다. 같은 선택을 두 번
+                                    하지 않게 하려는 것이지 고정하려는 것은 아니다.
+                                    다른 현장에 올릴 일이 있으므로 바꿀 수 있게 둔다. */}
+                                <input
+                                    type="text"
+                                    className="input-std"
+                                    value={project}
+                                    onChange={e => setProject(e.target.value)}
                                     placeholder="프로젝트명을 입력하세요"
                                 />
                             </div>
