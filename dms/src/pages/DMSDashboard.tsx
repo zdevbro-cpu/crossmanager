@@ -215,7 +215,6 @@ export default function DMSDashboard() {
     const [dbCustomCategories, setDbCustomCategories] = useState<any[]>([])
     const [selectedCategory, setSelectedCategory] = useState<string>('00_공무_행정')
     const [selectedSubFolderId, setSelectedSubFolderId] = useState<string | null>(null)
-    const [searchQuery, setSearchQuery] = useState('')
     const [selectedDocId, setSelectedDocId] = useState<string | null>(null)
     const [isUploadOpen, setIsUploadOpen] = useState(false)
     const [dragOverFolder, setDragOverFolder] = useState<string | null>(null)
@@ -223,9 +222,6 @@ export default function DMSDashboard() {
     const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(['00_공무_행정']))
     const [ctxMenu, setCtxMenu] = useState<{ x: number, y: number, type: 'doc' | 'folder' | 'category', id: string, parentCat?: string } | null>(null)
 
-    // 검색은 모달이 아니라 화면에 붙은 필터로 한다. 조건이 늘 보여야
-    // 한 칸만 고쳐 다시 찾을 수 있다.
-    const [isFilterOpen, setIsFilterOpen] = useState(false)
     const [searchResults, setSearchResults] = useState<any[] | null>(null)
 
     // --- Inline Edit States (detail panel) ---
@@ -244,7 +240,6 @@ export default function DMSDashboard() {
     const [inputModal, setInputModal] = useState({ isOpen: false, title: '', placeholder: '', onConfirm: (_v: string) => {} })
 
     useEffect(() => {
-        (window as any).openGlobalSearch = () => setIsFilterOpen(true)
         return () => { delete (window as any).openGlobalSearch }
     }, [])
 
@@ -480,7 +475,7 @@ export default function DMSDashboard() {
         const folderDocs = safeDocs.filter(d => 
             String(d.category || '').trim() === selectedCategory && 
             String(d.subCategory || '').trim() === folder.id &&
-            (!searchQuery || (d.name || '').toLowerCase()?.includes(searchQuery.toLowerCase()))
+            true
         )
         if (folderDocs.length === 0 && selectedSubFolderId !== folder.id) return null
 
@@ -513,13 +508,8 @@ export default function DMSDashboard() {
                     <div className="dash-eyebrow">DOCUMENT MANAGEMENT</div>
                     <h2 className="dash-title">[{selectedProj?.code || '...'}] {selectedProj?.name || '프로젝트 선택'}</h2>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'stretch', gap: '8px', height: '36px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', background: '#25262b', border: '1px solid #2c2e33', borderRadius: '4px', padding: '0 12px', width: '240px', boxSizing: 'border-box' }}>
-                        <Search size={16} color="#868e96" style={{ flexShrink: 0, marginRight: '8px' }}/>
-                        <input placeholder="프로젝트 내 문서 검색..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} style={{ background: 'transparent', border: 'none', outline: 'none', color: '#fff', fontSize: '0.85rem', width: '100%', padding: 0, margin: 0 }}/>
-                    </div>
-                    <button style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#1c7ed6', border: 'none', borderRadius: '4px', color: '#fff', fontWeight: 600, fontSize: '0.85rem', padding: '0 14px', cursor: 'pointer', whiteSpace: 'nowrap', boxSizing: 'border-box' }} onClick={() => setIsUploadOpen(true)}><UploadCloud size={16}/> 새 문서</button>
-                </div>
+                {/* 검색은 아래 문서 검색 필터가, 등록은 경로 옆 「이 분류에 문서 등록」이
+                    맡는다. 같은 일을 하는 칸이 두 개면 어느 쪽이 무엇을 거는지 알 수 없다. */}
             </header>
 
             <div className="content-split">
@@ -576,8 +566,6 @@ export default function DMSDashboard() {
 
                 <main className="doc-panel card main-content-area" style={{ flex: 1, padding: '32px', overflowY: 'auto', background: '#0b1221' }}>
                     <DocumentSearchBar
-                        open={isFilterOpen}
-                        onToggle={() => setIsFilterOpen(v => !v)}
                         onSearch={handleSearch}
                         onClear={() => setSearchResults(null)}
                         resultCount={searchResults === null ? null : searchResults.length}
