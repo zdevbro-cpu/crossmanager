@@ -150,7 +150,7 @@
     overflow-y: auto;
     max-width: 1400px;
     width: 100%;
-    margin: 0 auto;
+    margin: 0;   /* 좌측정렬. 사이드바가 왼쪽을 차지해 중앙정렬하면 우측 여백만 커진다. */
     padding: 0.75rem 1.5rem 1.5rem;
 }
 
