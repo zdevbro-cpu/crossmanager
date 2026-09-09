@@ -175,9 +175,10 @@ function App() {
             </div>
           </header>
 
-          {user && <Sidebar />}
+          {/* 원래 상단 메뉴는 로그인 여부와 무관하게 떠 있었다. 그대로 둔다. */}
+          <Sidebar />
 
-          <main className={`content ${user ? '' : 'content-full'}`}>
+          <main className="content">
             <Suspense fallback={<Spinner />}>
               <Routes>
                 <Route path="/" element={<Navigate to="/overview" replace />} />

@@ -1,83 +1,168 @@
 /* 마스터 화면 전용 스타일.
- * 기존 Page.css 는 건드리지 않는다. 여기서 쓰는 클래스는 전부 master- 로 시작한다. */
+ * 기존 Page.css 는 건드리지 않는다. 여기서 쓰는 클래스는 전부 master- 로 시작한다.
+ *
+ * 구성은 wbmanager 시스템관리 화면을 따랐다.
+ *   제목 → 1차 탭(밑줄) → 2차 탭(밑줄·건수) → 설명문·액션 → 3차 칩(건수) → 표
+ * 계층을 탭으로 눕히면 항목이 늘어도 세로 공간을 먹지 않는다. */
 
-.master-layout {
-  display: grid;
-  grid-template-columns: 176px 1fr;
-  gap: 1.25rem;
-  align-items: start;
-}
-
-.master-tabs {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  position: sticky;
-  top: 0;
-}
-
-.master-tab {
+.master-title {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 0.5rem;
-  padding: 0.5rem 0.65rem;
-  border-radius: 9px;
-  font-size: 0.88rem;
-  color: #c6d5f0;
+}
+
+/* ── 1차 탭 ─────────────────────────────────────────────── */
+.master-tabs1 {
+  display: flex;
+  gap: 0.25rem;
+  margin: 0.75rem 0 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.master-tab1 {
+  padding: 0.6rem 0.9rem;
+  margin-bottom: -1px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #9fb2cc;
   background: transparent;
-  border: 1px solid transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
   cursor: pointer;
-  text-align: left;
-  transition: all 0.15s ease;
+  transition: color 0.15s ease;
 }
 
-.master-tab:hover {
-  color: #f6f8ff;
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(99, 164, 255, 0.35);
+.master-tab1:hover {
+  color: #e2eaf8;
 }
 
-.master-tab.active {
+.master-tab1.active {
   color: #f2f5ff;
-  background: #475569;
-  border-color: rgba(71, 85, 105, 0.5);
+  border-bottom-color: #63a4ff;
+}
+
+/* ── 2차 탭 ─────────────────────────────────────────────── */
+.master-tabs2 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem;
+  margin: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.master-tab2 {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 0.55rem 0.75rem;
+  margin-bottom: -1px;
+  font-size: 0.88rem;
+  color: #9fb2cc;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.master-tab2:hover {
+  color: #e2eaf8;
+}
+
+.master-tab2.active {
+  color: #f2f5ff;
+  font-weight: 600;
+  border-bottom-color: #63a4ff;
 }
 
 .master-tab-count {
-  font-size: 0.75rem;
-  color: #8ea3c0;
+  font-size: 0.78rem;
+  color: #7d90ab;
 }
 
-.master-tab.active .master-tab-count {
-  color: #d7e2f5;
+.master-tab2.active .master-tab-count {
+  color: #a9c2e6;
 }
 
-.master-panel {
-  min-width: 0;
+/* ── 설명문 · 액션 ──────────────────────────────────────── */
+.master-desc {
+  margin: 0.9rem 0 0;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: #9fb2cc;
 }
 
-.master-panel-head {
+.master-actions {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.85rem 0 0;
+}
+
+.master-actions .input {
+  width: auto;
+}
+
+.master-hint {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: #7d90ab;
+}
+
+/* ── 3차 칩 ─────────────────────────────────────────────── */
+.master-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.9rem 0 0;
+}
+
+.master-chip {
+  display: inline-flex;
   align-items: baseline;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 0.75rem;
+  gap: 0.4rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 8px;
+  font-size: 0.84rem;
+  color: #c6d5f0;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+  transition: all 0.15s ease;
 }
 
-.master-panel-head h2 {
-  margin: 0;
-  font-size: 1.05rem;
+.master-chip:hover {
+  color: #f6f8ff;
+  border-color: rgba(99, 164, 255, 0.5);
+}
+
+.master-chip.active {
   color: #f2f5ff;
+  font-weight: 600;
+  background: rgba(99, 164, 255, 0.16);
+  border-color: rgba(99, 164, 255, 0.75);
 }
 
-.master-note {
-  margin: 0;
-  font-size: 0.82rem;
+.master-chip-count {
+  font-size: 0.78rem;
   color: #8ea3c0;
 }
 
+.master-chip.active .master-chip-count {
+  color: #cfe0fa;
+}
+
+/* 공통 코드군은 이 화면에서 고칠 수 없다. 칩에서 미리 구분해 준다. */
+.master-chip-lock {
+  font-size: 0.72rem;
+  color: #7d90ab;
+}
+
+/* ── 표 ─────────────────────────────────────────────────── */
 .master-scroll {
+  margin-top: 1rem;
   overflow-x: auto;
 }
 
@@ -124,75 +209,4 @@
   font-size: 0.72rem;
   color: #9fb2cc;
   border: 1px solid rgba(255, 255, 255, 0.12);
-}
-
-/* 공통코드 — 그룹 목록과 코드 목록을 좌우로 둔다. */
-.master-code-split {
-  display: grid;
-  grid-template-columns: 260px 1fr;
-  gap: 1rem;
-  align-items: start;
-}
-
-.master-group-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  width: 100%;
-  padding: 0.45rem 0.6rem;
-  border-radius: 8px;
-  font-size: 0.85rem;
-  color: #c6d5f0;
-  background: transparent;
-  border: 1px solid transparent;
-  cursor: pointer;
-  text-align: left;
-}
-
-.master-group-item:hover {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(99, 164, 255, 0.35);
-}
-
-.master-group-item.active {
-  color: #f2f5ff;
-  background: #475569;
-  border-color: rgba(71, 85, 105, 0.5);
-}
-
-.master-group-code {
-  display: block;
-  font-size: 0.72rem;
-  color: #8ea3c0;
-}
-
-.master-group-item.active .master-group-code {
-  color: #d7e2f5;
-}
-
-.master-inline-form {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  align-items: center;
-  margin-bottom: 0.75rem;
-}
-
-.master-inline-form .input {
-  width: auto;
-  min-width: 120px;
-}
-
-@media (max-width: 1080px) {
-  .master-layout,
-  .master-code-split {
-    grid-template-columns: 1fr;
-  }
-
-  .master-tabs {
-    position: static;
-    flex-direction: row;
-    flex-wrap: wrap;
-  }
 }
