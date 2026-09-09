@@ -837,17 +837,23 @@ select.input option {
   height: 100%;
 }
 
-/* Ensure 'grid four' behaves correctly */
+/* 열 수를 박지 않고 카드 최소 폭으로 정한다.
+ *
+ * repeat(4, 1fr) 로 두면 768px 이 될 때까지 4열을 유지해, 사이드바(232px)를
+ * 뺀 본문에서 카드가 200px 아래까지 눌린다. PMS·EMS 는 이 클래스가 없어
+ * 기본 .grid(auto-fit minmax)로 폭에 따라 열이 줄어든다. SMS 만 달랐다.
+ *
+ * auto-fit 은 빈 트랙을 접으므로 카드가 4개·3개뿐인 넓은 화면에서는
+ * 지금과 똑같이 4열·3열로 보인다. */
 .grid.four {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 1rem;
 }
 
-/* Fixed 3-column grid */
 .grid.three {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 1rem;
 }
 
