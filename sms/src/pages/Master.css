@@ -173,7 +173,7 @@
 }
 
 .master-table th {
-  padding: 0.55rem 0.45rem;
+  padding: 0.4rem 0.45rem;
   text-align: left;
   white-space: nowrap;
   color: #9fb2cc;
@@ -181,10 +181,31 @@
   border-bottom: 2px solid rgba(255, 255, 255, 0.12);
 }
 
+/* 한 줄 높이를 줄여 한 화면에 더 담는다.
+ * line-height 를 같이 낮추지 않으면 padding 만 줄여도 줄 간격이 남는다. */
 .master-table td {
-  padding: 0.5rem 0.45rem;
-  vertical-align: top;
+  padding: 0.3rem 0.45rem;
+  line-height: 1.4;
+  vertical-align: middle;
   border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+/* 작업 칸 — .btn-text 가 display:flex 라 그냥 두면 버튼이 세로로 쌓인다.
+ * 가로로 붙여 한눈에 보이게 한다. */
+.master-rowact {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.master-rowact .btn-text {
+  display: inline-flex;
+  padding: 0.15rem;
+  border-radius: 6px;
+}
+
+.master-rowact .btn-text:hover {
+  background: rgba(255, 255, 255, 0.07);
 }
 
 .master-table tbody tr:hover td {

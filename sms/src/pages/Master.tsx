@@ -476,29 +476,31 @@ function CodePanel({ onCount }: { onCount: (n: number) => void }) {
                                     <td className="master-dim">{c.attr ? JSON.stringify(c.attr) : '-'}</td>
                                     {current?.editable && (
                                         <td>
-                                            {editId === c.id ? (
-                                                <>
-                                                    <button className="btn-text" onClick={() => saveName(c.id)} title="저장">
-                                                        <Check size={15} />
-                                                    </button>
-                                                    <button className="btn-text" onClick={() => setEditId(null)} title="취소">
-                                                        <X size={15} />
-                                                    </button>
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <button
-                                                        className="btn-text"
-                                                        onClick={() => { setEditId(c.id); setEditName(c.name) }}
-                                                        title="이름 수정"
-                                                    >
-                                                        <Pencil size={15} />
-                                                    </button>
-                                                    <button className="btn-text" onClick={() => deactivate(c.id)} title="사용 중지">
-                                                        <X size={15} />
-                                                    </button>
-                                                </>
-                                            )}
+                                            <div className="master-rowact">
+                                                {editId === c.id ? (
+                                                    <>
+                                                        <button className="btn-text" onClick={() => saveName(c.id)} title="저장">
+                                                            <Check size={15} />
+                                                        </button>
+                                                        <button className="btn-text" onClick={() => setEditId(null)} title="취소">
+                                                            <X size={15} />
+                                                        </button>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <button
+                                                            className="btn-text"
+                                                            onClick={() => { setEditId(c.id); setEditName(c.name) }}
+                                                            title="이름 수정"
+                                                        >
+                                                            <Pencil size={15} />
+                                                        </button>
+                                                        <button className="btn-text" onClick={() => deactivate(c.id)} title="사용 중지">
+                                                            <X size={15} />
+                                                        </button>
+                                                    </>
+                                                )}
+                                            </div>
                                         </td>
                                     )}
                                 </tr>
