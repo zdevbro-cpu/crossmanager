@@ -8,6 +8,8 @@ import './Dashboard.css';
 
 
 
+// 화면에 나오는 순서는 이 배열 순서를 따른다. PMS → DMS → SMS → EMS.
+// SWMS 는 접근 제한이라 화면에 나오지 않으므로 맨 뒤에 둔다.
 const SYSTEMS = [
     {
         id: 'PMS',
@@ -16,6 +18,22 @@ const SYSTEMS = [
         description: '', // description removed from UI usage
         icon: <PieChart size={32} />,
         url: import.meta.env.PROD ? '/pms' : import.meta.env.VITE_APP_URL_PMS
+    },
+    {
+        id: 'DMS',
+        titleKor: '통합 문서관리시스템',
+        acronym: 'DMS',
+        description: '',
+        icon: <Folder size={32} />,
+        url: import.meta.env.PROD ? '/dms' : import.meta.env.VITE_APP_URL_DMS
+    },
+    {
+        id: 'SMS',
+        titleKor: '안전 관리시스템',
+        acronym: 'SMS',
+        description: '',
+        icon: <ShieldCheck size={32} />,
+        url: import.meta.env.PROD ? '/sms' : import.meta.env.VITE_APP_URL_SMS
     },
     {
         id: 'EMS',
@@ -32,22 +50,6 @@ const SYSTEMS = [
         description: '',
         icon: <FileText size={32} />,
         url: import.meta.env.PROD ? '/swms' : import.meta.env.VITE_APP_URL_SWMS
-    },
-    {
-        id: 'SMS',
-        titleKor: '안전 관리시스템',
-        acronym: 'SMS',
-        description: '',
-        icon: <ShieldCheck size={32} />,
-        url: import.meta.env.PROD ? '/sms' : import.meta.env.VITE_APP_URL_SMS
-    },
-    {
-        id: 'DMS',
-        titleKor: '통합 문서관리시스템',
-        acronym: 'DMS',
-        description: '',
-        icon: <Folder size={32} />,
-        url: import.meta.env.PROD ? '/dms' : import.meta.env.VITE_APP_URL_DMS
     }
 ];
 
