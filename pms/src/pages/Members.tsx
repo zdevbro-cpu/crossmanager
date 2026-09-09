@@ -9,6 +9,7 @@ import { apiClient } from '../lib/api'
 import { Trash2, Plus, Eye, RotateCcw, CheckCircle, XCircle } from 'lucide-react'
 import ChecklistTemplateManager from '../components/ChecklistTemplateManager'
 import PmsResourceAdmin from '../components/PmsResourceAdmin'
+import ClientPanel from '../components/ClientPanel'
 
 const roles: { code: RoleCode; label: string }[] = [
   { code: 'executive', label: '경영자' },
@@ -40,7 +41,7 @@ function MembersPage() {
   const members = data ?? []
 
   // Tab State
-  const [activeTab, setActiveTab] = useState<'users' | 'resources' | 'templates' | 'my-role'>('users')
+  const [activeTab, setActiveTab] = useState<'users' | 'clients' | 'resources' | 'templates' | 'my-role'>('users')
 
   // Users State
   const [allUsers, setAllUsers] = useState<any[]>([])
@@ -149,6 +150,20 @@ function MembersPage() {
           }}
         >
           자원관리(자격/투입가능)
+        </button>
+        <button
+          onClick={() => setActiveTab('clients')}
+          style={{
+            padding: '0.75rem 1rem',
+            background: 'none',
+            border: 'none',
+            borderBottom: activeTab === 'clients' ? '2px solid #3b82f6' : '2px solid transparent',
+            color: activeTab === 'clients' ? '#3b82f6' : '#64748b',
+            fontWeight: activeTab === 'clients' ? 600 : 400,
+            cursor: 'pointer'
+          }}
+        >
+          발주처 관리
         </button>
         <button
           onClick={() => setActiveTab('templates')}
@@ -317,6 +332,15 @@ function MembersPage() {
       {/* Tab Content: Resources */}
       {activeTab === 'resources' && (
         <PmsResourceAdmin projectId={assignProjectId} />
+      )}
+
+      {/* Tab Content: Clients — 발주처는 프로젝트의 상위 개념이라 PMS 에서 등록한다.
+          다른 모듈(SMS 마스터 등)은 조회만 한다. */}
+      {activeTab === 'clients' && (
+        <section className="card">
+          <p className="card-label">발주처 관리</p>
+          <ClientPanel />
+        </section>
       )}
 
       {/* Tab Content: Checklist Templates */}

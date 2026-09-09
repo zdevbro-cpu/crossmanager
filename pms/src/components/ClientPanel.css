@@ -1,0 +1,148 @@
+/* 발주처 관리 전용 스타일.
+ * PMS 기존 스타일 파일은 건드리지 않는다. 여기 클래스는 전부 cp- 로 시작한다. */
+
+.cp-desc {
+  margin: 0 0 0.9rem;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: #9fb2cc;
+}
+
+.cp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.9rem;
+}
+
+.cp-hint {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: #7d90ab;
+}
+
+.cp-input {
+  padding: 0.42rem 0.6rem;
+  border-radius: 9px;
+  font-size: 0.88rem;
+  color: #f2f6ff;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.cp-input:focus {
+  outline: 2px solid rgba(139, 211, 255, 0.6);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.cp-input::placeholder {
+  color: #6d809b;
+}
+
+.cp-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.42rem 0.8rem;
+  border-radius: 9px;
+  font-size: 0.86rem;
+  color: #c6d5f0;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  cursor: pointer;
+}
+
+.cp-btn:hover {
+  color: #f6f8ff;
+  border-color: rgba(99, 164, 255, 0.5);
+}
+
+.cp-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cp-btn-primary {
+  color: #0b1324;
+  background: #8bd3ff;
+  border-color: transparent;
+  font-weight: 600;
+}
+
+.cp-btn-primary:hover {
+  color: #0b1324;
+  background: #a5ddff;
+}
+
+.cp-icon {
+  display: inline-flex;
+  padding: 0.2rem;
+  border-radius: 7px;
+  color: #9fb2cc;
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.cp-icon:hover {
+  color: #f6f8ff;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.cp-scroll {
+  overflow-x: auto;
+}
+
+.cp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.cp-table th {
+  padding: 0.4rem 0.45rem;
+  text-align: left;
+  white-space: nowrap;
+  font-weight: 600;
+  color: #9fb2cc;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.12);
+}
+
+.cp-table td {
+  padding: 0.32rem 0.45rem;
+  line-height: 1.4;
+  vertical-align: middle;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.cp-table tbody tr:hover td {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.cp-dim {
+  color: #8ea3c0;
+  font-size: 0.8rem;
+}
+
+.cp-num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.cp-rowact {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.cp-empty {
+  padding: 2rem;
+  text-align: center;
+  color: #8ea3c0;
+}
+
+.cp-empty-icon {
+  color: #56698a;
+}

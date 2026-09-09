@@ -145,21 +145,31 @@ export default function DocChecklist({ projectId }: { projectId: string }) {
                 </div>
             </div>
 
-            {groups.map(g => (
-                <div key={g.key} className="dc-group">
-                    <p className="dc-group-label">{g.key}</p>
-                    <table className="dc-table">
-                        <thead>
-                            <tr>
-                                <th>문서</th>
-                                <th style={{ width: 70 }}>구분</th>
-                                <th style={{ width: 60 }}>필수</th>
-                                <th>양식</th>
-                                <th style={{ width: 130 }}>등록</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {g.items.map(item => {
+            {/* 대분류마다 표를 따로 그리면 표마다 열 너비를 제각각 계산해
+                열이 좌우로 어긋난다. 표 하나에 구분줄만 끼워 넣는다. */}
+            <table className="dc-table">
+                <colgroup>
+                    <col />
+                    <col style={{ width: 70 }} />
+                    <col style={{ width: 60 }} />
+                    <col style={{ width: '32%' }} />
+                    <col style={{ width: 150 }} />
+                </colgroup>
+                <thead>
+                    <tr>
+                        <th>문서</th>
+                        <th>구분</th>
+                        <th>필수</th>
+                        <th>양식</th>
+                        <th>등록</th>
+                    </tr>
+                </thead>
+                {groups.map(g => (
+                    <tbody key={g.key}>
+                        <tr className="dc-group-row">
+                            <td colSpan={5}>{g.key}</td>
+                        </tr>
+                        {g.items.map(item => {
                                 const renderable = item.doc_type_code && RENDERABLE.includes(item.doc_type_code)
                                 return (
                                     <tr key={item.id}>
@@ -214,12 +224,11 @@ export default function DocChecklist({ projectId }: { projectId: string }) {
                                             )}
                                         </td>
                                     </tr>
-                                )
-                            })}
-                        </tbody>
-                    </table>
-                </div>
-            ))}
+                            )
+                        })}
+                    </tbody>
+                ))}
+            </table>
 
             <p className="dc-foot">
                 여기서 올린 양식은 <strong>이 현장 전용</strong>으로 등록됩니다.

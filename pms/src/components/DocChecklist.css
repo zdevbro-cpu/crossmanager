@@ -186,3 +186,21 @@
   font-size: 0.85rem;
   color: #8ea3c0;
 }
+
+/* 대분류 구분줄. 표를 나누면 열이 어긋나므로 한 표 안에 줄로 넣는다. */
+.dc-group-row td {
+  padding: 0.7rem 0.45rem 0.25rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #7d90ab;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.dc-table tbody:first-of-type .dc-group-row td {
+  padding-top: 0.35rem;
+}
+
+.dc-group-row:hover td {
+  background: transparent;
+}
