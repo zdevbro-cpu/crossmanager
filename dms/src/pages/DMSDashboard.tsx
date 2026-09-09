@@ -195,6 +195,9 @@ const STANDARD_CATEGORIES_DATA: Record<string, string[]> = {
   '05_기타': []
 }
 
+// 대분류를 새로 만들 때 서버에 보내는 표식. 중분류는 대분류 이름을 보낸다.
+const ROOT_CATEGORY = '__ROOT__'
+
 const PARENT_CATEGORIES = [
   { id: '00_공무_행정', label: '00_공무_행정' },
   { id: '01_안전_보건', label: '01_안전_보건' },
@@ -253,7 +256,13 @@ export default function DMSDashboard() {
     useEffect(() => { fetchCustomCategories() }, [selectedId])
 
     const categoryStructure = useMemo(() => {
-        return PARENT_CATEGORIES.map(pc => {
+        // 표준 대분류 6종은 소스에 박혀 있고, 현장에서 더한 대분류는
+        // dms_categories 에 parent_category = '__ROOT__' 로 들어온다.
+        const customRoots = dbCustomCategories
+            .filter(dbc => dbc.parent_category === ROOT_CATEGORY)
+            .map(dbc => ({ id: dbc.name, label: dbc.name, dbId: dbc.id, isCustomRoot: true }))
+
+        return [...PARENT_CATEGORIES, ...customRoots].map((pc: any) => {
             const standard = (STANDARD_CATEGORIES_DATA[pc.id] || []).map(name => ({ id: name, label: name, isStandard: true }))
             const custom = dbCustomCategories.filter(dbc => dbc.parent_category === pc.id).map(dbc => ({ id: dbc.name, label: dbc.name, isStandard: false, dbId: dbc.id }))
             return { ...pc, folders: [...standard, ...custom] }
@@ -295,6 +304,28 @@ export default function DMSDashboard() {
     }
 
     // --- Action Handlers ---
+    // 대분류를 현장에서 더한다. 표준 6종(00~05) 뒤 번호가 자동으로 붙는다.
+    const onAddRootCategory = () => {
+        if (!selectedId) return
+        setInputModal({
+            isOpen: true,
+            title: '문서 대분류 추가',
+            placeholder: '예: 06_환경_민원',
+            onConfirm: async (val) => {
+                if (!val || !selectedId) return
+                try {
+                    await apiClient.post('/documents/categories', {
+                        projectId: selectedId,
+                        parentCategory: ROOT_CATEGORY,
+                        name: val.trim()
+                    })
+                    fetchCustomCategories()
+                    setInputModal(prev => ({ ...prev, isOpen: false }))
+                } catch (err) { }
+            }
+        })
+    }
+
     const onAddSubCategory = (parentCatId: string) => {
         setInputModal({
             isOpen: true,
@@ -522,7 +553,27 @@ export default function DMSDashboard() {
                 <nav className="nav-panel card sidebar-explorer">
                     {/* 제목·현장선택·분류를 위로 당긴다. 패널(1.25rem) 위에 20px 이
                         더 붙어 트리가 화면 한참 아래에서 시작했다. */}
-                    <div className="sidebar-header" style={{ fontSize: '1.05rem', fontWeight: 800, padding: '12px 16px', borderBottom: '1px solid #1f2228' }}>문서 탐색기</div>
+                    <div className="sidebar-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', fontSize: '1.05rem', fontWeight: 800, padding: '12px 16px', borderBottom: '1px solid #1f2228' }}>
+                        <span>문서 탐색기</span>
+                        {/* 우클릭에만 두면 기능이 있어도 보이지 않는다. 버튼으로 꺼낸다. */}
+                        <button
+                            onClick={onAddRootCategory}
+                            disabled={!selectedId}
+                            title={selectedId ? '문서 대분류 추가' : '프로젝트를 먼저 선택하십시오'}
+                            style={{
+                                display: 'inline-flex', alignItems: 'center', gap: '4px',
+                                height: '26px', padding: '0 9px', borderRadius: '7px',
+                                fontSize: '0.78rem', fontWeight: 600,
+                                color: selectedId ? '#c6d5f0' : '#495057',
+                                background: 'rgba(255,255,255,0.05)',
+                                border: '1px solid rgba(255,255,255,0.12)',
+                                cursor: selectedId ? 'pointer' : 'not-allowed',
+                                whiteSpace: 'nowrap',
+                            }}
+                        >
+                            <Plus size={13} /> 대분류
+                        </button>
+                    </div>
                     <div className="nav-group" style={{ padding: '12px 16px' }}>
                         <select className="project-select" value={selectedId || ''} onChange={e => setSelectedId(e.target.value)}>
                             {projects?.map((p: any) => (<option key={p.id} value={p.id}>[{p.code}] {p.name}</option>))}
@@ -545,7 +596,7 @@ export default function DMSDashboard() {
                                     </div>
                                     {expandedCategories.has(cat.id) && (
                                         <div className="tree-children" style={{ marginLeft: '12px', borderLeft: '1px solid rgba(255,255,255,0.05)' }}>
-                                            {cat.folders?.map(f => (
+                                            {cat.folders?.map((f: any) => (
                                                 <div 
                                                     key={f.id}
                                                     className={`tree-item child ${selectedSubFolderId === f.id ? 'active' : ''}`}
@@ -633,9 +684,9 @@ export default function DMSDashboard() {
                         </button>
                     </div>
                     {selectedSubFolderId ? (
-                        currentCategoryNode?.folders?.filter(f => f.id === selectedSubFolderId).map(f => renderFolderSection(f))
+                        currentCategoryNode?.folders?.filter((f: any) => f.id === selectedSubFolderId).map((f: any) => renderFolderSection(f))
                     ) : (
-                        currentCategoryNode?.folders?.map(f => renderFolderSection(f))
+                        currentCategoryNode?.folders?.map((f: any) => renderFolderSection(f))
                     )}
                     </>
                     )}
@@ -884,6 +935,18 @@ export default function DMSDashboard() {
                             <div className="ctx-item" style={{ padding: '10px 12px', color: '#fff', cursor: 'pointer', borderRadius: '6px' }} onClick={() => { onAddSubCategory(ctxMenu.id); setCtxMenu(null); }}>
                                 <Plus size={14}/> 하위 공종 폴더 생성
                             </div>
+                            {/* 표준 대분류 6종은 소스에 박혀 있어 지울 수 없다.
+                                현장에서 더한 대분류만 지운다. */}
+                            {(() => {
+                                const rootInfo: any = categoryStructure.find((c: any) => c.id === ctxMenu.id)
+                                if (!rootInfo?.isCustomRoot) return null
+                                return (
+                                    <div className="ctx-item danger" style={{ padding: '10px 12px', color: '#fa5252', cursor: 'pointer', borderRadius: '6px' }}
+                                        onClick={() => { onDeleteFolder(ctxMenu.id, rootInfo.dbId); setCtxMenu(null); }}>
+                                        <Trash2 size={14}/> 대분류 삭제
+                                    </div>
+                                )
+                            })()}
                         </>
                     )}
                     {ctxMenu.type === 'folder' && (() => {

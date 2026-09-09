@@ -719,6 +719,11 @@ const createDocumentsRouter = (pool, uploadsDir) => {
             return res.status(400).json({ error: 'projectId, parentCategory, and name are required' })
         }
 
+        // 대분류를 새로 만들 때는 parentCategory 에 __ROOT__ 를 넣는다.
+        // 표준 대분류 6종(00~05)은 소스에 박혀 있어 그 다음 번호부터 붙인다.
+        const ROOT = '__ROOT__'
+        const STANDARD_ROOT_COUNT = 5   // 05_기타 까지
+
         // 표준 공종 갯수 정의 (ID 기준 마지막 번호)
         const STANDARD_COUNTS = {
             '00_공무_행정': 5,
@@ -731,7 +736,9 @@ const createDocumentsRouter = (pool, uploadsDir) => {
 
         try {
             // 1. 해당 카테고리의 표준 번호 가져오기
-            const baseSeq = STANDARD_COUNTS[parentCategory] || 0
+            const baseSeq = parentCategory === ROOT
+                ? STANDARD_ROOT_COUNT
+                : (STANDARD_COUNTS[parentCategory] || 0)
 
             // 2. DB에 이미 추가된 커스텀 공종 중 최대 연번 확인
             const seqRes = await pool.query(
