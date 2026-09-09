@@ -512,6 +512,15 @@ export default function DMSDashboard() {
                     맡는다. 같은 일을 하는 칸이 두 개면 어느 쪽이 무엇을 거는지 알 수 없다. */}
             </header>
 
+            {/* 머리말 오른쪽 검색칸을 없앴으니 필터를 그 자리로 올린다.
+                본문 안에 두면 탐색기 폭에 눌려 칸이 좁아지고, 문서 목록이
+                한 화면 아래로 밀린다. */}
+            <DocumentSearchBar
+                onSearch={handleSearch}
+                onClear={() => setSearchResults(null)}
+                resultCount={searchResults === null ? null : searchResults.length}
+            />
+
             <div className="content-split">
                 <nav className="nav-panel card sidebar-explorer">
                     <div className="sidebar-header" style={{ fontSize: '1.2rem', fontWeight: 800, padding: '20px', borderBottom: '1px solid #1f2228' }}>문서 탐색기</div>
@@ -565,12 +574,6 @@ export default function DMSDashboard() {
                 </nav>
 
                 <main className="doc-panel card main-content-area" style={{ flex: 1, padding: '32px', overflowY: 'auto', background: '#0b1221' }}>
-                    <DocumentSearchBar
-                        onSearch={handleSearch}
-                        onClear={() => setSearchResults(null)}
-                        resultCount={searchResults === null ? null : searchResults.length}
-                    />
-
                     {searchResults !== null ? (
                         <>
                             <div style={{ marginBottom: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
