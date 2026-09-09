@@ -172,6 +172,110 @@ const createMasterRouter = (pool) => {
         } catch (e) { fail(res, e, '발주처 조회 실패') }
     })
 
+    // 발주처 등록·수정.
+    // 신규 발주처는 이름만 넣어 두면 된다. 양식·필수서류 프로파일이 없어도
+    // 기본값으로 동작하므로 착수를 막지 않는다.
+    router.post('/clients', async (req, res) => {
+        try {
+            const { clientCode, name, shortName, regulationType, memo } = req.body || {}
+            if (!name || !String(name).trim()) {
+                return res.status(400).json({ error: '발주처명은 필수입니다.' })
+            }
+            const { rows } = await pool.query(`
+                INSERT INTO client (client_code, name, short_name, regulation_type, memo, is_active)
+                VALUES ($1, $2, $3, $4, $5, TRUE) RETURNING *`,
+                [clientCode || null, String(name).trim(), shortName || null,
+                 regulationType || null, memo || null])
+            res.status(201).json(rows[0])
+        } catch (e) {
+            if (e.code === '23505') return res.status(409).json({ error: '이미 있는 발주처 코드입니다.' })
+            fail(res, e, '발주처 등록 실패')
+        }
+    })
+
+    router.patch('/clients/:id', async (req, res) => {
+        try {
+            const { clientCode, name, shortName, regulationType, memo, isActive } = req.body || {}
+            const { rows } = await pool.query(`
+                UPDATE client SET
+                    client_code     = COALESCE($2, client_code),
+                    name            = COALESCE($3, name),
+                    short_name      = COALESCE($4, short_name),
+                    regulation_type = COALESCE($5, regulation_type),
+                    memo            = COALESCE($6, memo),
+                    is_active       = COALESCE($7, is_active),
+                    updated_at      = NOW()
+                 WHERE id = $1 RETURNING *`,
+                [req.params.id, clientCode ?? null, name ?? null, shortName ?? null,
+                 regulationType ?? null, memo ?? null, isActive ?? null])
+            if (!rows.length) return res.status(404).json({ error: '없는 발주처입니다.' })
+            res.json(rows[0])
+        } catch (e) { fail(res, e, '발주처 수정 실패') }
+    })
+
+    /**
+     * 프로젝트 문서 체크리스트.
+     *
+     * 무엇을 내야 하고, 그 양식이 무엇인지 한 화면에서 본다.
+     *
+     * 체크리스트 출처
+     *   발주처 프로파일 > 크로스 기본 프로파일(client_id IS NULL)
+     *   신규 발주처라 프로파일이 없어도 기본 목록으로 착수할 수 있어야 한다.
+     *
+     * 양식 선택
+     *   현장 전용(project_id) > 발주처(client_id) > 기본(둘 다 NULL)
+     *   문서유형마다 가장 가까운 것 하나를 고르고, 어디서 왔는지도 함께 준다.
+     *   출처를 감추면 "왜 이 양식이 나오지?" 를 화면에서 확인할 수 없다.
+     */
+    router.get('/projects/:id/doc-checklist', async (req, res) => {
+        try {
+            const pj = await pool.query(
+                'SELECT id, code, name, client_id FROM projects WHERE id = $1', [req.params.id])
+            if (!pj.rowCount) return res.status(404).json({ error: '없는 프로젝트입니다.' })
+            const project = pj.rows[0]
+
+            const prof = await pool.query(`
+                SELECT id, profile_name, client_id FROM client_profile
+                 WHERE is_active AND (client_id = $1 OR client_id IS NULL)
+                 ORDER BY client_id NULLS LAST LIMIT 1`, [project.client_id])
+            if (!prof.rowCount) {
+                return res.json({ project, profile: null, source: 'NONE', items: [] })
+            }
+            const profile = prof.rows[0]
+
+            const { rows } = await pool.query(`
+                SELECT r.id, r.scope, r.doc_type_code, r.doc_label, r.is_required, r.sort_order,
+                       d.name AS doc_type_name, d.category_code, d.require_approval, d.is_personal_data,
+                       t.id AS template_id, t.template_code, t.name AS template_name,
+                       t.engine, t.storage_key,
+                       CASE WHEN t.project_id IS NOT NULL THEN 'PROJECT'
+                            WHEN t.client_id  IS NOT NULL THEN 'CLIENT'
+                            WHEN t.id IS NOT NULL         THEN 'DEFAULT'
+                       END AS template_source
+                  FROM client_required_doc r
+             LEFT JOIN doc_type d ON d.doc_type_code = r.doc_type_code
+             -- 문서유형마다 가장 가까운 양식 하나. LATERAL 이라야 행별로 고를 수 있다.
+             LEFT JOIN LATERAL (
+                    SELECT t.* FROM template t
+                     WHERE t.is_active AND t.doc_type_code = r.doc_type_code
+                       AND (t.project_id = $2 OR t.project_id IS NULL)
+                       AND (t.client_id = $3 OR t.client_id IS NULL)
+                     ORDER BY (t.project_id IS NULL), (t.client_id IS NULL)
+                     LIMIT 1
+             ) t ON TRUE
+                 WHERE r.profile_id = $1
+                 ORDER BY d.category_code NULLS LAST, r.scope, r.sort_order`,
+                [profile.id, project.id, project.client_id])
+
+            res.json({
+                project,
+                profile,
+                source: profile.client_id ? 'CLIENT' : 'DEFAULT',
+                items: rows,
+            })
+        } catch (e) { fail(res, e, '문서 체크리스트 조회 실패') }
+    })
+
     // 발주처가 요구하는 필수서류. 신규 현장 착수 시 이 목록이 체크리스트가 된다.
     router.get('/clients/:id/required-docs', async (req, res) => {
         try {
@@ -613,6 +717,51 @@ const createMasterRouter = (pool) => {
     })
 
     // 등록 — 파일은 드라이브에 두고 DB 에는 참조와 매핑만 남긴다.
+    /**
+     * 서식 보관형 양식 등록.
+     *
+     * 문서 38종 전부에 열 매핑을 요구하면 쓸 수 없다. 선임계·사진대지처럼
+     * 대부분의 서류는 빈 양식을 받아 두고 내려받아 손으로 채운다.
+     * 매핑 없이 파일만 보관하면 되므로 engine 을 FILE 로 둔다.
+     *
+     * RA·TBM 처럼 데이터를 채워 출력하는 양식은 /ra-templates 로 등록한다
+     * (열 매핑 확인 단계가 필요하다).
+     */
+    router.post('/doc-templates', async (req, res) => {
+        try {
+            const { docTypeCode, name, clientId, projectId, fileBase64, fileName, memo } = req.body || {}
+            if (!docTypeCode) return res.status(400).json({ error: '문서유형은 필수입니다.' })
+            if (!fileBase64) return res.status(400).json({ error: '양식 파일이 필요합니다.' })
+
+            const gdrive = require('../lib/drive')
+            const up = await gdrive.uploadToDrive({
+                buffer: Buffer.from(fileBase64, 'base64'),
+                fileName: fileName || `${docTypeCode}`,
+                mimeType: 'application/octet-stream',
+            })
+
+            // 양식 코드는 범위가 드러나게 만든다. 같은 문서유형이라도 현장 전용과
+            // 발주처 것이 따로 있을 수 있어 코드가 겹치면 서로 덮어쓴다.
+            const scope = projectId ? `P${String(projectId).slice(0, 8)}`
+                : clientId ? `C${clientId}`
+                    : 'STD'
+            const templateCode = `${docTypeCode}_${scope}`
+
+            const { rows } = await pool.query(`
+                INSERT INTO template (template_code, name, client_id, project_id, doc_type_code,
+                                      engine, storage_key, memo, version, is_active)
+                VALUES ($1,$2,$3,$4,$5,'FILE',$6,$7,'1.0',TRUE)
+                ON CONFLICT (template_code) DO UPDATE SET
+                    name = EXCLUDED.name, storage_key = EXCLUDED.storage_key,
+                    memo = EXCLUDED.memo, is_active = TRUE, updated_at = NOW()
+                RETURNING *`,
+                [templateCode, name || fileName || docTypeCode, clientId || null,
+                 projectId || null, docTypeCode, up.driveFileId, memo || null])
+
+            res.status(201).json(rows[0])
+        } catch (e) { fail(res, e, '양식 등록 실패') }
+    })
+
     router.post('/ra-templates', async (req, res) => {
         try {
             const {
