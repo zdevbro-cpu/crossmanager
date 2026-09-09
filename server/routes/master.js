@@ -820,6 +820,99 @@ const createMasterRouter = (pool) => {
         } catch (e) { fail(res, e, '양식 등록 실패') }
     })
 
+    /* ── TBM 양식 ─────────────────────────────────────────────
+       RA 와 저장 자리는 같다(template, doc_type_code='TBM').
+       다만 구조가 달라 열 매핑 대신 레이아웃을 쓴다.
+       RA:  열 번호           — 행이 반복되는 표 하나
+       TBM: 라벨 옆 칸 좌표   — 머리글 + 위험요인 몇 줄 + 참석자 격자
+       레이아웃은 header_cells 한 칸에 { fields, hazard, attendee } 로 모은다.
+       컬럼을 더 만들면 RA 와 스키마가 갈라진다. */
+    router.post('/tbm-templates/analyze', async (req, res) => {
+        try {
+            const b64 = req.body && req.body.fileBase64
+            if (!b64) return res.status(400).json({ error: '양식 파일이 필요합니다' })
+            const { analyzeTbmTemplate } = require('../lib/tbm-template')
+            res.json(await analyzeTbmTemplate(Buffer.from(b64, 'base64')))
+        } catch (e) { fail(res, e, 'TBM 양식 분석 실패') }
+    })
+
+    router.get('/tbm-templates', async (req, res) => {
+        try {
+            const { clientId, projectId } = req.query
+            const { rows } = await pool.query(`
+                SELECT t.*, c.name AS client_name, p.name AS project_name
+                  FROM template t
+             LEFT JOIN client c ON c.id = t.client_id
+             LEFT JOIN projects p ON p.id = t.project_id
+                 WHERE t.doc_type_code = 'TBM' AND t.is_active AND t.engine = 'XLSX_CELL'
+                   AND ($1::bigint IS NULL OR t.client_id = $1)
+                   AND ($2::uuid IS NULL OR t.project_id = $2 OR t.project_id IS NULL)
+                 ORDER BY t.client_id NULLS LAST, t.name`,
+                [clientId || null, projectId || null])
+            res.json(rows)
+        } catch (e) { fail(res, e, 'TBM 양식 조회 실패') }
+    })
+
+    router.post('/tbm-templates', async (req, res) => {
+        try {
+            const {
+                templateCode, name, clientId, projectId, fileBase64, fileName,
+                sheetIndex, headerCells, hazardBlock, attendeeBlock, memo,
+            } = req.body
+
+            if (!templateCode || !name) return res.status(400).json({ error: '코드와 이름은 필수입니다' })
+            if (!headerCells || !Object.keys(headerCells).length) {
+                // 머리글 한 칸도 못 찾으면 어디에 무엇을 쓸지 정할 수 없다.
+                return res.status(400).json({ error: '머리글 항목을 하나 이상 지정해야 합니다' })
+            }
+
+            let storageKey = null
+            if (fileBase64) {
+                const gdrive = require('../lib/drive')
+                const up = await gdrive.uploadToDrive({
+                    buffer: Buffer.from(fileBase64, 'base64'),
+                    fileName: fileName || `${templateCode}.xlsx`,
+                    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                })
+                storageKey = up.driveFileId
+            }
+
+            const layout = {
+                fields: headerCells,
+                hazard: hazardBlock || null,
+                attendee: attendeeBlock || null,
+            }
+
+            const { rows } = await pool.query(`
+                INSERT INTO template (template_code, name, client_id, project_id, doc_type_code,
+                                      engine, storage_key, sheet_index, header_cells, memo,
+                                      version, is_active)
+                VALUES ($1,$2,$3,$4,'TBM','XLSX_CELL',$5,$6,$7,$8,'1.0',TRUE)
+                ON CONFLICT (template_code) DO UPDATE SET
+                    name = EXCLUDED.name, client_id = EXCLUDED.client_id,
+                    project_id = EXCLUDED.project_id,
+                    storage_key = COALESCE(EXCLUDED.storage_key, template.storage_key),
+                    sheet_index = EXCLUDED.sheet_index, header_cells = EXCLUDED.header_cells,
+                    memo = EXCLUDED.memo, is_active = TRUE, updated_at = NOW()
+                RETURNING *`,
+                [templateCode, name, clientId || null, projectId || null, storageKey,
+                 sheetIndex || 0, JSON.stringify(layout), memo || null])
+
+            res.status(201).json(rows[0])
+        } catch (e) { fail(res, e, 'TBM 양식 등록 실패') }
+    })
+
+    router.get('/tbm-templates/:id', async (req, res) => {
+        try {
+            const { rows } = await pool.query(
+                "SELECT * FROM template WHERE id = $1 AND doc_type_code = 'TBM'", [req.params.id])
+            if (!rows.length) return res.status(404).json({ error: '없는 양식입니다' })
+            const t = rows[0]
+            const layout = t.header_cells || {}
+            res.json({ ...t, headerCells: layout.fields || {}, hazardBlock: layout.hazard, attendeeBlock: layout.attendee })
+        } catch (e) { fail(res, e, 'TBM 양식 상세 조회 실패') }
+    })
+
     router.get('/ra-templates/:id', async (req, res) => {
         try {
             const t = await pool.query('SELECT * FROM template WHERE id = $1', [req.params.id])

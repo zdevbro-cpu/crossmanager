@@ -3,6 +3,7 @@ import { Database, Plus, Check, X, Pencil, Download, Settings } from 'lucide-rea
 import { useToast } from '../components/ToastProvider'
 import { apiClient } from '../lib/api'
 import RaTemplatePanel from './RaTemplatePanel'
+import TbmTemplatePanel from './TbmTemplatePanel'
 import './Page.css'
 import './Master.css'
 
@@ -214,6 +215,20 @@ const TABS: Tab[] = [
                 render: r => (r.is_personal_data ? <span className="badge badge-alert">포함</span> : '-'),
                 text: r => (r.is_personal_data ? '포함' : '-'),
             },
+        ],
+    },
+    {
+        key: 'tbm-templates',
+        label: 'TBM 양식',
+        group: '문서·양식',
+        path: '/master/tbm-templates',
+        desc: 'TBM 일지를 발주처 양식 그대로 출력합니다.',
+        chipField: 'engine',
+        cols: [
+            { key: 'code', label: '양식 코드', width: 150, render: r => r.template_code, text: r => r.template_code },
+            { key: 'name', label: '양식명', render: r => r.name, text: r => r.name },
+            { key: 'client', label: '발주처', width: 130, render: r => dash(r.client_name), text: r => dash(r.client_name) },
+            { key: 'project', label: '전용 현장', width: 140, render: r => dash(r.project_name), text: r => dash(r.project_name) },
         ],
     },
     {
@@ -679,6 +694,7 @@ export default function Master() {
 
             {tabKey === 'codes' ? <CodePanel onCount={setCodeCount} />
                 : tabKey === 'ra-templates' ? <RaTemplatePanel />
+                : tabKey === 'tbm-templates' ? <TbmTemplatePanel />
                 : activeTab && (
                     <ReadonlyPanel
                         tab={activeTab}

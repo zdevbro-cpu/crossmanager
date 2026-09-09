@@ -2346,6 +2346,73 @@ app.get('/api/sms/risk-assessments/:id/export', async (req, res) => {
     }
 })
 
+// TBM 일지를 등록된 고객사 양식으로 출력한다.
+//
+// 양식 선택은 RA 와 같은 규칙이다 — 현장 전용 > 발주처 > 기본.
+// 등록된 양식이 없으면 내보낼 수 없다. RA 처럼 기본 양식을 코드에 박아 두지
+// 않았다. TBM 양식은 현장마다 편차가 커서 하나를 표준으로 삼기 어렵다.
+app.get('/api/sms/dris/:id/export', async (req, res) => {
+    try {
+        const { id } = req.params
+        const driRes = await pool.query(`
+            SELECT d.*, p.name AS project_name, c.name AS company_name,
+                   w.name AS work_type_name, l.name AS location_name
+              FROM sms_dris d
+         LEFT JOIN projects p ON p.id = d.project_id
+         LEFT JOIN company c ON c.id = d.company_id
+         LEFT JOIN work_type w ON w.work_type_code = d.work_type_code
+         LEFT JOIN location l ON l.id = d.location_id
+             WHERE d.id = $1`, [id])
+        if (!driRes.rowCount) return res.status(404).json({ error: 'TBM 기록을 찾을 수 없습니다' })
+        const dri = driRes.rows[0]
+
+        const hazards = await pool.query(
+            'SELECT * FROM tbm_hazard WHERE tbm_id = $1 ORDER BY sort_order NULLS LAST, id', [id])
+        const attendees = await pool.query(
+            'SELECT * FROM tbm_attendee WHERE tbm_id = $1 ORDER BY id', [id])
+
+        const tplRes = await pool.query(`
+            SELECT t.* FROM template t
+             WHERE t.doc_type_code = 'TBM' AND t.is_active AND t.engine = 'XLSX_CELL'
+               AND t.storage_key IS NOT NULL
+               AND (t.project_id = $1 OR t.project_id IS NULL)
+               AND (t.client_id IS NULL OR t.client_id = (
+                    SELECT client_id FROM projects WHERE id = $1))
+             ORDER BY (t.project_id IS NOT NULL) DESC, (t.client_id IS NOT NULL) DESC
+             LIMIT 1`, [dri.project_id])
+
+        if (!tplRes.rowCount) {
+            return res.status(400).json({
+                error: '등록된 TBM 양식이 없습니다. 안전관리 > 마스터에서 먼저 등록하십시오.'
+            })
+        }
+
+        const tpl = tplRes.rows[0]
+        const gdrive = require('./lib/drive')
+        const dl = await gdrive.downloadFromDrive(tpl.storage_key)
+        const chunks = []
+        for await (const c of dl.stream) chunks.push(c)
+
+        const { renderTbmWithTemplate } = require('./lib/tbm-template')
+        const buf = await renderTbmWithTemplate(Buffer.concat(chunks), tpl, {
+            ...dri,
+            location: dri.location || dri.location_name,
+            hazards: hazards.rows,
+            attendees: attendees.rows,
+        })
+
+        const dt = (dri.date ? new Date(dri.date) : new Date()).toISOString().slice(0, 10)
+        const safe = String(dri.work_content || 'TBM').slice(0, 24).replace(/[\/:*?"<>|]/g, '_')
+        const name = `TBM일지_${safe}_${dt}.xlsx`
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(name)}`)
+        res.send(Buffer.from(buf))
+    } catch (err) {
+        console.error('[TBM export]', err)
+        res.status(500).json({ error: '엑셀 생성 실패', details: err.message })
+    }
+})
+
 // 3. Create Risk Assessment
 app.post('/api/sms/risk-assessments', async (req, res) => {
     const client = await pool.connect()
