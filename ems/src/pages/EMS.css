@@ -1,0 +1,62 @@
+/* EMS Specific Styles */
+
+/* Page Container with Max Width */
+.page {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 0 1.5rem;
+}
+
+/* Form Grid - Responsive 2-3 columns */
+.form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1rem 1.5rem;
+}
+
+@media (min-width: 768px) {
+    .form-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (min-width: 1200px) {
+    .form-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+/* Full width fields */
+.form-grid label.full-width {
+    grid-column: 1 / -1;
+}
+
+/* Section Divider */
+.section-divider {
+    margin: 2rem 0;
+    border: none;
+    border-top: 1px solid #334155;
+}
+
+/* Form Section Header */
+.form-section-header {
+    margin-bottom: 1.5rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid #334155;
+}
+
+.form-section-header h4 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #e2e8f0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.form-section-header p {
+    margin: 0.5rem 0 0;
+    font-size: 0.875rem;
+    color: #94a3b8;
+}

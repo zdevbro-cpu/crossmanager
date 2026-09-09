@@ -11,8 +11,7 @@ $modules = @(
     @{ Name="PMS"; Target="pms" },
     @{ Name="EMS"; Target="ems" },
     @{ Name="SWMS"; Target="swms" },
-    @{ Name="SMS"; Target="sms" },
-    @{ Name="dms"; Target="dms" }
+    @{ Name="SMS"; Target="sms" }
 )
 
 foreach ($mod in $modules) {

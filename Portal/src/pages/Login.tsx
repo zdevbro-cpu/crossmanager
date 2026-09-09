@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -15,15 +15,6 @@ export default function Login() {
     const { user } = useAuth();
 
     React.useEffect(() => {
-        const params = new URLSearchParams(window.location.search);
-        if (params.get('action') === 'logout') {
-            signOut(auth).then(() => {
-                // Clear the query param so refresh doesn't keep logging out
-                window.history.replaceState({}, '', window.location.pathname);
-            });
-            return; // Stop here, don't redirect to dashboard yet
-        }
-
         if (user) {
             navigate('/', { replace: true });
         }
@@ -98,18 +89,6 @@ export default function Login() {
                         Sign In
                     </button>
                 </form>
-
-                <div style={{ marginTop: '1.5rem', textAlign: 'center', fontSize: '0.9rem', color: '#cbd5e1' }}>
-                    <p>
-                        계정이 없으신가요?{' '}
-                        <span
-                            style={{ color: '#60a5fa', cursor: 'pointer', fontWeight: 600 }}
-                            onClick={() => navigate('/signup')}
-                        >
-                            직원등록
-                        </span>
-                    </p>
-                </div>
 
                 <div className="login-footer">
                     © 2024 Cross Unified System

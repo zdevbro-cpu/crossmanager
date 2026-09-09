@@ -40,8 +40,11 @@ const getPortalLoginUrl = () => {
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<SessionUser | null>(() => {
-    // 1. Try SSO first (High Priority)
+  const [user, setUser] = useState<SessionUser | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    // SSO Check
     const params = new URLSearchParams(window.location.search)
     const ssoUserStr = params.get('sso_user')
     if (ssoUserStr) {
@@ -54,42 +57,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           role: ssoUser.role,
           mock: true
         }
+        // Save to local storage for persistence
         localStorage.setItem(STORAGE_KEY, JSON.stringify(localUser))
+        setUser(localUser)
+        setLoading(false)
+        // Clean URL
         window.history.replaceState({}, '', window.location.pathname)
-        return localUser
+        return
       } catch (e) {
         console.error('SSO Login Failed:', e)
       }
     }
 
-    // 2. Try Local Storage
     if (!auth) {
       const stored = localStorage.getItem(STORAGE_KEY)
       if (stored) {
-        return JSON.parse(stored) as LocalUser
+        setUser(JSON.parse(stored) as LocalUser)
       }
-    }
-    return null
-  })
-
-  // Loading state depends on whether we have a user initially
-  const [loading, setLoading] = useState(!user && !!auth)
-
-  useEffect(() => {
-    if (!auth) {
       setLoading(false)
       return
     }
 
     const unsub = onAuthStateChanged(auth, (u) => {
-      if (u) {
-        setUser(u)
-      } else {
-        const isLocalMock = user && 'mock' in user && (user as LocalUser).mock
-        if (!isLocalMock) {
-          setUser(null)
-        }
-      }
+      setUser(u)
       setLoading(false)
     })
     return () => unsub()
@@ -116,7 +106,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await firebaseSignOut(auth)
     }
     localStorage.removeItem(STORAGE_KEY)
-    window.location.replace(`${getPortalLoginUrl()}?action=logout`)
+    window.location.replace(getPortalLoginUrl())
   }
 
   const value = useMemo(() => ({ user, loading, signIn, signOut }), [user, loading])

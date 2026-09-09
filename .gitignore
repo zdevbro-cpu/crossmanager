@@ -151,18 +151,13 @@ serviceAccountKey.json
 server/serviceAccountKey.json
 Data/
 
-# 자격증명 — 커밋 금지
-Server/env_customer.env
-functions/env_customer.env
-.env.cross.local
+# 실제 시크릿은 커밋하지 않음
+functions/.env
+pms/.env
 
-# 별개 프로젝트 — 이 저장소에서 관리하지 않는다
-itbookmanager/
-branchfinder/
+# 시크릿 포함
+*env_customer.env
 
-# 별개 프로젝트
-las-mgmt/
-
-# 대용량 산출물
-docs/*.pdf
-backup_*.sql
+# 비밀번호 하드코딩된 일회성 스크립트
+server/fix_db.ps1
+server/init_dms_categories.js
