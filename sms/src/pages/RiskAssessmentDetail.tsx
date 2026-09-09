@@ -1,7 +1,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Printer, CheckCircle, Calendar, User, FileSpreadsheet } from 'lucide-react'
+import { ArrowLeft, CheckCircle, Calendar, User, FileSpreadsheet } from 'lucide-react'
 import './Page.css'
 import { apiClient } from '../lib/api'
 import type { RiskAssessment, RiskItem } from '../types/sms'
@@ -56,21 +56,19 @@ export default function RiskAssessmentDetailPage() {
                     </div>
                 </div>
                 {/*
-                    현장 양식 그대로 내려받는다. 화면 인쇄로는 22열·병합셀 338개인
-                    현장 서식을 재현할 수 없어 실무에 쓸 수 없다(설계서 6.4).
+                    화면 인쇄는 두지 않는다. 22열·병합셀 338개인 현장 서식을
+                    브라우저 인쇄로 재현할 수 없어 실무에 쓸 수 없다(설계서 6.4).
+                    현장 양식 xlsx 에 값을 채워 내려받는 것만 제공한다.
                 */}
-                <button
-                    className="btn-primary"
-                    onClick={() => { window.location.href = `/api/sms/risk-assessments/${id}/export` }}
-                    style={{ marginRight: '0.6rem' }}
-                >
-                    <FileSpreadsheet size={18} />
-                    현장 양식 내려받기
-                </button>
-                <button className="btn-secondary" onClick={() => window.print()}>
-                    <Printer size={18} />
-                    인쇄
-                </button>
+                <div style={{ marginLeft: 'auto' }}>
+                    <button
+                        className="btn-primary"
+                        onClick={() => { window.location.href = `/api/sms/risk-assessments/${id}/export` }}
+                    >
+                        <FileSpreadsheet size={18} />
+                        엑셀 다운로드
+                    </button>
+                </div>
             </header>
 
             <div className="grid two" style={{ marginBottom: '2rem' }}>
