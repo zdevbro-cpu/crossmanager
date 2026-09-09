@@ -50,6 +50,7 @@ const ProjectsPage = lazy(() => import('./pages/Projects'))
 const ReportsPage = lazy(() => import('./pages/Reports'))
 const ResourcesPage = lazy(() => import('./pages/Resources'))
 const SchedulePage = lazy(() => import('./pages/Schedule'))
+const MilestonesPage = lazy(() => import('./pages/Milestones'))
 const MembersPage = lazy(() => import('./pages/Members'))
 const SignupPage = lazy(() => import('./pages/Signup'))
 
@@ -66,7 +67,7 @@ const navGroups = [
     label: '프로젝트',
     items: [
       { path: '/projects', label: '프로젝트', icon: FolderKanban },
-      { path: '/schedule', label: '일정(WBS)', icon: CalendarRange },
+      { path: '/milestones', label: '마일스톤', icon: CalendarRange },
       { path: '/resources', label: '자원', icon: Users },
       { path: '/contracts', label: '계약/견적', icon: Receipt },
     ],
@@ -196,6 +197,16 @@ function App() {
                   element={
                     <RequireAuth>
                       <ProjectsPage />
+                    </RequireAuth>
+                  }
+                />
+                {/* 간트(WBS)는 선후행·가중치를 다 채워야 그림이 나와 유지가 어려웠다.
+                    달력으로 바꾸고 기존 화면은 지우지 않고 경로만 남겨 둔다. */}
+                <Route
+                  path="/milestones"
+                  element={
+                    <RequireAuth>
+                      <MilestonesPage />
                     </RequireAuth>
                   }
                 />

@@ -1,0 +1,213 @@
+/* 마일스톤 달력 전용 스타일.
+ * 기존 스타일 파일은 건드리지 않는다. 여기 클래스는 전부 ms- 로 시작한다. */
+
+.ms-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.ms-title {
+  min-width: 88px;
+  text-align: center;
+  font-size: 1rem;
+  color: #f2f5ff;
+}
+
+.ms-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  height: 32px;
+  padding: 0 0.7rem;
+  border-radius: 9px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #c6d5f0;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ms-btn:hover {
+  color: #f6f8ff;
+  border-color: rgba(99, 164, 255, 0.5);
+}
+
+.ms-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ms-btn.primary {
+  color: #0b1324;
+  background: #8bd3ff;
+  border-color: transparent;
+}
+
+.ms-btn.danger {
+  color: #ffb4b4;
+  border-color: rgba(255, 111, 111, 0.4);
+}
+
+/* ── 달력 ─────────────────────────────────────────────── */
+.ms-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 1px;
+  margin-top: 1rem;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.ms-head {
+  padding: 8px 10px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #9fb2cc;
+  background: rgba(10, 16, 32, 0.7);
+  text-align: center;
+}
+
+.ms-head.sun { color: #ff9b9b; }
+.ms-head.sat { color: #8bd3ff; }
+
+.ms-cell {
+  min-height: 108px;
+  padding: 6px;
+  background: #0b1221;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.ms-cell:hover {
+  background: rgba(255, 255, 255, 0.035);
+}
+
+/* 이번 달이 아닌 날은 눌러서 등록은 되지만 눈에 덜 띄게 둔다. */
+.ms-cell.dim {
+  background: rgba(11, 18, 33, 0.55);
+}
+
+.ms-cell.dim .ms-day {
+  color: #46566f;
+}
+
+.ms-cell.today {
+  box-shadow: inset 0 0 0 2px rgba(139, 211, 255, 0.55);
+}
+
+.ms-day {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.8rem;
+  color: #9fb2cc;
+}
+
+.ms-day.sun { color: #ff9b9b; }
+.ms-day.sat { color: #8bd3ff; }
+
+.ms-item {
+  display: block;
+  width: 100%;
+  margin-bottom: 3px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  line-height: 1.3;
+  text-align: left;
+  color: #e8f4ff;
+  background: rgba(28, 126, 214, 0.28);
+  border: 1px solid rgba(77, 171, 247, 0.45);
+  cursor: pointer;
+  /* 제목이 길어도 칸을 밀지 않는다. 전체는 툴팁으로 본다. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ms-item:hover {
+  background: rgba(28, 126, 214, 0.45);
+}
+
+/* ── 등록·수정 ─────────────────────────────────────────── */
+.ms-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: rgba(4, 8, 18, 0.6);
+  backdrop-filter: blur(3px);
+}
+
+.ms-modal-box {
+  width: 100%;
+  max-width: 520px;
+  padding: 1.25rem;
+  border-radius: 14px;
+  background: rgba(12, 18, 32, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+}
+
+.ms-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.ms-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 0.8rem;
+}
+
+.ms-field > span {
+  font-size: 0.8rem;
+  color: #8ea3c0;
+}
+
+.ms-field input {
+  padding: 0.45rem 0.6rem;
+  border-radius: 9px;
+  font-size: 0.9rem;
+  color: #f2f6ff;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.ms-field input:focus {
+  outline: 2px solid rgba(139, 211, 255, 0.6);
+}
+
+.ms-field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 110px;
+  gap: 0.6rem;
+}
+
+.ms-modal-foot {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+@media (max-width: 720px) {
+  .ms-field-row {
+    grid-template-columns: 1fr;
+  }
+
+  .ms-cell {
+    min-height: 84px;
+  }
+}
