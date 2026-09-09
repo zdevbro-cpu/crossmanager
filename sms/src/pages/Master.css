@@ -1,0 +1,198 @@
+/* 마스터 화면 전용 스타일.
+ * 기존 Page.css 는 건드리지 않는다. 여기서 쓰는 클래스는 전부 master- 로 시작한다. */
+
+.master-layout {
+  display: grid;
+  grid-template-columns: 176px 1fr;
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.master-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  position: sticky;
+  top: 0;
+}
+
+.master-tab {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 9px;
+  font-size: 0.88rem;
+  color: #c6d5f0;
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s ease;
+}
+
+.master-tab:hover {
+  color: #f6f8ff;
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(99, 164, 255, 0.35);
+}
+
+.master-tab.active {
+  color: #f2f5ff;
+  background: #475569;
+  border-color: rgba(71, 85, 105, 0.5);
+}
+
+.master-tab-count {
+  font-size: 0.75rem;
+  color: #8ea3c0;
+}
+
+.master-tab.active .master-tab-count {
+  color: #d7e2f5;
+}
+
+.master-panel {
+  min-width: 0;
+}
+
+.master-panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.master-panel-head h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  color: #f2f5ff;
+}
+
+.master-note {
+  margin: 0;
+  font-size: 0.82rem;
+  color: #8ea3c0;
+}
+
+.master-scroll {
+  overflow-x: auto;
+}
+
+.master-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.master-table th {
+  padding: 0.55rem 0.45rem;
+  text-align: left;
+  white-space: nowrap;
+  color: #9fb2cc;
+  font-weight: 600;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.12);
+}
+
+.master-table td {
+  padding: 0.5rem 0.45rem;
+  vertical-align: top;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.master-table tbody tr:hover td {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.master-num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.master-dim {
+  color: #8ea3c0;
+  font-size: 0.8rem;
+}
+
+.master-readonly {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  color: #9fb2cc;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+/* 공통코드 — 그룹 목록과 코드 목록을 좌우로 둔다. */
+.master-code-split {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 1rem;
+  align-items: start;
+}
+
+.master-group-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  color: #c6d5f0;
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.master-group-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(99, 164, 255, 0.35);
+}
+
+.master-group-item.active {
+  color: #f2f5ff;
+  background: #475569;
+  border-color: rgba(71, 85, 105, 0.5);
+}
+
+.master-group-code {
+  display: block;
+  font-size: 0.72rem;
+  color: #8ea3c0;
+}
+
+.master-group-item.active .master-group-code {
+  color: #d7e2f5;
+}
+
+.master-inline-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.master-inline-form .input {
+  width: auto;
+  min-width: 120px;
+}
+
+@media (max-width: 1080px) {
+  .master-layout,
+  .master-code-split {
+    grid-template-columns: 1fr;
+  }
+
+  .master-tabs {
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+}

@@ -5,9 +5,82 @@ import RequireAuth from './components/RequireAuth'
 import LoginPage from './pages/Login'
 import EquipmentListPage from './pages/EquipmentList'
 import EquipmentDetailPage from './pages/EquipmentDetail'
-import { LogOut } from 'lucide-react'
+import { useState } from 'react'
+import {
+  LogOut, Wrench, ClipboardList, ShieldCheck, BarChart3,
+  PanelLeftClose, PanelLeftOpen,
+} from 'lucide-react'
 import './App.css'
 import './index.css'
+
+// 상단 메뉴를 좌측 사이드바로 옮겼다. 메뉴는 그대로이고 위치만 바뀐다.
+const navGroups = [
+  {
+    label: '',
+    items: [
+      { path: '/equipment', label: '장비 목록', icon: Wrench },
+    ],
+  },
+  {
+    label: '이력·점검',
+    items: [
+      { path: '/maintenance', label: '정비 이력', icon: ClipboardList },
+      { path: '/inspection', label: '검사 관리', icon: ShieldCheck },
+    ],
+  },
+  {
+    label: '분석',
+    items: [
+      { path: '/analytics', label: '분석', icon: BarChart3 },
+    ],
+  },
+]
+
+function Sidebar() {
+  // 접힘 상태는 사람마다 취향이 갈려 브라우저에 남긴다.
+  const [collapsed, setCollapsed] = useState(
+    () => localStorage.getItem('ems.sidebar.collapsed') === '1'
+  )
+
+  const toggle = () => {
+    setCollapsed((v) => {
+      localStorage.setItem('ems.sidebar.collapsed', v ? '0' : '1')
+      return !v
+    })
+  }
+
+  return (
+    <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
+      <button
+        className="sidebar-toggle"
+        onClick={toggle}
+        title={collapsed ? '메뉴 펼치기' : '메뉴 접기'}
+      >
+        {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+      </button>
+
+      {navGroups.map((group, gi) => (
+        <div className="sidebar-group" key={group.label || `g${gi}`}>
+          {group.label && <p className="sidebar-group-label">{group.label}</p>}
+          {group.items.map((item) => {
+            const Icon = item.icon
+            return (
+              <NavLink
+                key={item.path}
+                to={item.path}
+                title={item.label}
+                className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
+              >
+                <Icon size={17} />
+                <span className="sidebar-link-text">{item.label}</span>
+              </NavLink>
+            )
+          })}
+        </div>
+      ))}
+    </aside>
+  )
+}
 
 function getPortalHomeUrl() {
   const envUrl = import.meta.env.VITE_PORTAL_HOME_URL as string | undefined
@@ -33,13 +106,6 @@ function AppContent() {
   const { user, signOut } = useAuth()
   const logoSrc = `${import.meta.env.BASE_URL}images/cross-logo.png`
 
-  const navItems = [
-    { path: '/equipment', label: '장비 목록' },
-    { path: '/maintenance', label: '정비 이력' },
-    { path: '/inspection', label: '검사 관리' },
-    { path: '/analytics', label: '분석' }
-  ]
-
   return (
     <div className="app">
       {user && (
@@ -57,20 +123,6 @@ function AppContent() {
                 </div>
               </a>
             </div>
-          </div>
-
-          <div className="nav-container">
-            <nav className="main-nav">
-              {navItems.map((item) => (
-                <NavLink
-                  key={item.path}
-                  to={item.path}
-                  className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
-                >
-                  {item.label}
-                </NavLink>
-              ))}
-            </nav>
           </div>
 
           <div className="header-actions">
@@ -91,7 +143,9 @@ function AppContent() {
         </header>
       )}
 
-      <main className="content">
+      {user && <Sidebar />}
+
+      <main className={`content ${user ? '' : 'content-full'}`}>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route

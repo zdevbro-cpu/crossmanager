@@ -1,5 +1,10 @@
+import { useState } from 'react'
 import { Navigate, NavLink, Route, Routes } from 'react-router-dom'
-import { LogOut } from 'lucide-react'
+import {
+  LogOut, LayoutDashboard, ShieldAlert, Sun, ListChecks, Footprints,
+  GraduationCap, Siren, FileText, BellRing, Library, ClipboardCheck,
+  Database, PanelLeftClose, PanelLeftOpen,
+} from 'lucide-react'
 import './App.css'
 import './pages/Page.css'
 import { ToastProvider, ToastViewport } from './components/ToastProvider'
@@ -22,19 +27,44 @@ import LoginPage from './pages/Login'
 import ExpiryPage from './pages/Expiry'
 import HazardLibraryPage from './pages/HazardLibrary'
 import HazardReviewPage from './pages/HazardReview'
+import MasterPage from './pages/Master'
 
-const navItems = [
-  { path: '/sms/dashboard', label: '현장 대시보드' },
-  { path: '/sms/ra', label: '위험성평가(RA)' },
-  { path: '/sms/dri', label: 'DRI(일일 위험예지)' },
-  { path: '/sms/checklist', label: '체크리스트' },
-  { path: '/sms/patrol', label: '패트롤' },
-  { path: '/sms/education', label: '교육/자격' },
-  { path: '/sms/incidents', label: '사고/아차사고' },
-  { path: '/sms/reports', label: '보고·문서' },
-  { path: '/sms/expiry', label: '만료 알림' },
-  { path: '/sms/hazard-library', label: '위험요인 라이브러리' },
-  { path: '/sms/hazard-review', label: '위험요인 검수' },
+// 메뉴 11개가 상단바 한 줄에 들어가지 않아 좌측으로 옮겼다.
+// 사이드바라도 평면 나열은 길어서 성격별로 묶는다.
+// 기존 메뉴는 하나도 빼지 않았다. 위치만 바뀐다.
+const navGroups = [
+  {
+    label: '',
+    items: [
+      { path: '/sms/dashboard', label: '현장 대시보드', icon: LayoutDashboard },
+    ],
+  },
+  {
+    label: '평가·점검',
+    items: [
+      { path: '/sms/ra', label: '위험성평가(RA)', icon: ShieldAlert },
+      { path: '/sms/dri', label: 'DRI(일일 위험예지)', icon: Sun },
+      { path: '/sms/checklist', label: '체크리스트', icon: ListChecks },
+      { path: '/sms/patrol', label: '패트롤', icon: Footprints },
+    ],
+  },
+  {
+    label: '관리',
+    items: [
+      { path: '/sms/education', label: '교육/자격', icon: GraduationCap },
+      { path: '/sms/incidents', label: '사고/아차사고', icon: Siren },
+      { path: '/sms/reports', label: '보고·문서', icon: FileText },
+      { path: '/sms/expiry', label: '만료 알림', icon: BellRing },
+    ],
+  },
+  {
+    label: '마스터',
+    items: [
+      { path: '/sms/master', label: '기준정보', icon: Database },
+      { path: '/sms/hazard-library', label: '위험요인 라이브러리', icon: Library },
+      { path: '/sms/hazard-review', label: '위험요인 검수', icon: ClipboardCheck },
+    ],
+  },
 ]
 
 function getPortalHomeUrl() {
@@ -55,6 +85,52 @@ function getPortalHomeUrl() {
   }
 
   return `${window.location.origin}/`
+}
+
+function Sidebar() {
+  // 접힘 상태는 사람마다 취향이 갈려 브라우저에 남긴다.
+  const [collapsed, setCollapsed] = useState(
+    () => localStorage.getItem('sms.sidebar.collapsed') === '1'
+  )
+
+  const toggle = () => {
+    setCollapsed((v) => {
+      localStorage.setItem('sms.sidebar.collapsed', v ? '0' : '1')
+      return !v
+    })
+  }
+
+  return (
+    <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
+      <button
+        className="sidebar-toggle"
+        onClick={toggle}
+        title={collapsed ? '메뉴 펼치기' : '메뉴 접기'}
+      >
+        {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+      </button>
+
+      {navGroups.map((group, gi) => (
+        <div className="sidebar-group" key={group.label || `g${gi}`}>
+          {group.label && <p className="sidebar-group-label">{group.label}</p>}
+          {group.items.map((item) => {
+            const Icon = item.icon
+            return (
+              <NavLink
+                key={item.path}
+                to={item.path}
+                title={item.label}
+                className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
+              >
+                <Icon size={17} />
+                <span className="sidebar-link-text">{item.label}</span>
+              </NavLink>
+            )
+          })}
+        </div>
+      ))}
+    </aside>
+  )
 }
 
 function AppShell() {
@@ -82,22 +158,6 @@ function AppShell() {
               </a>
             </div>
           </div>
-
-          {user && (
-            <div className="nav-container">
-              <nav className="main-nav">
-                {navItems.map((item) => (
-                  <NavLink
-                    key={item.path}
-                    to={item.path}
-                    className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
-                  >
-                    {item.label}
-                  </NavLink>
-                ))}
-              </nav>
-            </div>
-          )}
 
           <div className="header-actions">
             {user && !projectsLoading && projects.length > 0 && (
@@ -139,7 +199,9 @@ function AppShell() {
           </div>
         </header>
 
-        <main className="content">
+        {user && <Sidebar />}
+
+        <main className={`content ${user ? '' : 'content-full'}`}>
           <Routes>
             <Route path="/sms/login" element={<LoginPage />} />
             <Route
@@ -251,6 +313,14 @@ function AppShell() {
               element={
                 <RequireAuth>
                   <HazardReviewPage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/sms/master"
+              element={
+                <RequireAuth>
+                  <MasterPage />
                 </RequireAuth>
               }
             />

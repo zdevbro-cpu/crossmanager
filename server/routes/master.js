@@ -78,6 +78,90 @@ const createMasterRouter = (pool) => {
         } catch (e) { fail(res, e, '코드 모듈 조회 실패') }
     })
 
+    // 코드 추가·수정.
+    // COMMON 그룹은 여러 모듈이 함께 쓰므로 모듈 화면에서 고칠 수 없다.
+    // 화면에서 막는 것만으로는 부족해 여기서도 막는다.
+    const assertEditable = async (groupCode, callerModule) => {
+        const { rows } = await pool.query(
+            'SELECT module FROM code_group WHERE group_code = $1', [groupCode])
+        if (!rows.length) return '없는 코드그룹입니다: ' + groupCode
+        const owner = rows[0].module
+        const caller = (callerModule || '').toUpperCase()
+        if (owner === 'COMMON' && caller !== 'COMMON') {
+            return '공통(COMMON) 코드는 본사 마스터에서만 수정할 수 있습니다.'
+        }
+        if (owner !== 'COMMON' && caller && caller !== owner) {
+            return `${owner} 모듈의 코드입니다. 해당 모듈에서 수정하십시오.`
+        }
+        return null
+    }
+
+    router.post('/codes', async (req, res) => {
+        try {
+            const { groupCode, code, name, sortOrder, attr, module } = req.body || {}
+            if (!groupCode || !code || !name) {
+                return res.status(400).json({ error: '코드그룹·코드·명칭은 필수입니다.' })
+            }
+            const deny = await assertEditable(groupCode, module)
+            if (deny) return res.status(403).json({ error: deny })
+
+            const { rows } = await pool.query(`
+                INSERT INTO code (group_code, code, name, sort_order, attr, is_active)
+                VALUES ($1, $2, $3, COALESCE($4, 99), $5, TRUE)
+                RETURNING *`,
+                [groupCode, code, name, sortOrder ?? null, attr ?? null])
+            res.status(201).json(rows[0])
+        } catch (e) {
+            if (e.code === '23505') return res.status(409).json({ error: '이미 있는 코드입니다.' })
+            fail(res, e, '코드 등록 실패')
+        }
+    })
+
+    router.patch('/codes/:id', async (req, res) => {
+        try {
+            const { name, sortOrder, isActive, attr, module } = req.body || {}
+            const cur = await pool.query('SELECT group_code FROM code WHERE id = $1', [req.params.id])
+            if (!cur.rows.length) return res.status(404).json({ error: '코드를 찾을 수 없습니다.' })
+            const deny = await assertEditable(cur.rows[0].group_code, module)
+            if (deny) return res.status(403).json({ error: deny })
+
+            const { rows } = await pool.query(`
+                UPDATE code SET
+                    name       = COALESCE($2, name),
+                    sort_order = COALESCE($3, sort_order),
+                    is_active  = COALESCE($4, is_active),
+                    attr       = COALESCE($5, attr),
+                    updated_at = NOW()
+                 WHERE id = $1 RETURNING *`,
+                [req.params.id, name ?? null, sortOrder ?? null, isActive ?? null, attr ?? null])
+            res.json(rows[0])
+        } catch (e) { fail(res, e, '코드 수정 실패') }
+    })
+
+    // ── 조회 전용 마스터 ────────────────────────────────────
+    // 마스터 화면이 한자리에 모아 보여 준다. 등록은 각 모듈이 담당한다.
+    router.get('/equipment', async (req, res) => {
+        try {
+            const { rows } = await pool.query(`
+                SELECT id, equipment_id, name, category, model, manufacturer,
+                       equipment_status, assigned_site, next_inspection_date
+                  FROM equipment ORDER BY name NULLS LAST LIMIT 500`)
+            res.json(rows)
+        } catch (e) { fail(res, e, '장비 조회 실패') }
+    })
+
+    router.get('/roles', async (req, res) => {
+        try {
+            // role 의 키는 role_code 다(id 컬럼이 없다).
+            const { rows } = await pool.query(`
+                SELECT r.role_code, r.role_name, r.scope_type, r.description,
+                       (SELECT count(*)::int FROM role_permission p WHERE p.role_code = r.role_code)
+                         AS permission_count
+                  FROM role r ORDER BY r.role_code`)
+            res.json(rows)
+        } catch (e) { fail(res, e, '권한 조회 실패') }
+    })
+
     // ── 발주처 ──────────────────────────────────────────────
     router.get('/clients', async (req, res) => {
         try {

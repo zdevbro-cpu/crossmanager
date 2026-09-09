@@ -1,5 +1,6 @@
+import { useState } from 'react'
 import { Routes, Route, NavLink } from 'react-router-dom'
-import { Package, Scale, TrendingUp, TrendingDown, Warehouse, Wallet, BarChart3, FileText, LogOut, MapPin } from 'lucide-react'
+import { Package, Scale, TrendingUp, TrendingDown, Warehouse, Wallet, BarChart3, FileText, LogOut, MapPin, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { useAuth } from './hooks/useAuth'
 import { SiteProvider, useSite } from './contexts/SiteContext'
 import { ProjectProvider } from './contexts/ProjectContext'
@@ -43,24 +44,91 @@ function getPortalHomeUrl() {
     return `${window.location.origin}/`
 }
 
+// 상단 메뉴를 좌측 사이드바로 옮겼다. 메뉴는 그대로이고 위치와 묶음만 바뀐다.
+const navGroups = [
+    {
+        label: '',
+        items: [
+            { path: '/', icon: BarChart3, label: '대시보드' },
+        ],
+    },
+    {
+        label: '물류',
+        items: [
+            { path: '/generation', icon: Package, label: '발생 관리' },
+            { path: '/weighing', icon: Scale, label: '계근 관리' },
+            { path: '/inbound', icon: TrendingDown, label: '입고 관리' },
+            { path: '/outbound', icon: TrendingUp, label: '출고 관리' },
+            { path: '/inventory', icon: Warehouse, label: '재고 관리' },
+        ],
+    },
+    {
+        label: '정산',
+        items: [
+            { path: '/sales', icon: Wallet, label: '매각 관리' },
+            { path: '/settlement', icon: FileText, label: '정산 관리' },
+        ],
+    },
+    {
+        label: '분석',
+        items: [
+            { path: '/reports', icon: BarChart3, label: '분석·리포트' },
+        ],
+    },
+]
+
+function Sidebar() {
+    // 접힘 상태는 사람마다 취향이 갈려 브라우저에 남긴다.
+    const [collapsed, setCollapsed] = useState(
+        () => localStorage.getItem('swms.sidebar.collapsed') === '1'
+    )
+
+    const toggle = () => {
+        setCollapsed((v) => {
+            localStorage.setItem('swms.sidebar.collapsed', v ? '0' : '1')
+            return !v
+        })
+    }
+
+    return (
+        <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
+            <button
+                className="sidebar-toggle"
+                onClick={toggle}
+                title={collapsed ? '메뉴 펼치기' : '메뉴 접기'}
+            >
+                {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+            </button>
+
+            {navGroups.map((group, gi) => (
+                <div className="sidebar-group" key={group.label || `g${gi}`}>
+                    {group.label && <p className="sidebar-group-label">{group.label}</p>}
+                    {group.items.map((item) => {
+                        const Icon = item.icon
+                        return (
+                            <NavLink
+                                key={item.path}
+                                to={item.path}
+                                title={item.label}
+                                className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
+                            >
+                                <Icon size={17} />
+                                <span className="sidebar-link-text">{item.label}</span>
+                            </NavLink>
+                        )
+                    })}
+                </div>
+            ))}
+        </aside>
+    )
+}
+
 function AppShell() {
     const { user, loading, signOut } = useAuth()
     const { currentSite, sites, setCurrentSite, loading: siteLoading } = useSite()
     const logoSrc = `${import.meta.env.BASE_URL}images/cross-logo.png`
 
     if (loading || siteLoading) return <Spinner />
-
-    const navItems = [
-        { path: '/', icon: BarChart3, label: '대시보드' },
-        { path: '/generation', icon: Package, label: '발생 관리' },
-        { path: '/weighing', icon: Scale, label: '계근 관리' },
-        { path: '/inbound', icon: TrendingDown, label: '입고 관리' },
-        { path: '/outbound', icon: TrendingUp, label: '출고 관리' },
-        { path: '/inventory', icon: Warehouse, label: '재고 관리' },
-        { path: '/sales', icon: Wallet, label: '매각 관리' },
-        { path: '/settlement', icon: FileText, label: '정산 관리' },
-        { path: '/reports', icon: BarChart3, label: '분석·리포트' }
-    ]
 
     return (
         <ToastProvider>
@@ -80,25 +148,6 @@ function AppShell() {
                             </a>
                         </div>
                     </div>
-
-                    {user && (
-                        <div className="nav-container">
-                            <nav className="main-nav">
-                                {navItems.map((item) => {
-                                    const Icon = item.icon
-                                    return (
-                                        <NavLink
-                                            key={item.path}
-                                            to={item.path}
-                                            className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
-                                        >
-                                            <Icon size={18} /> <span>{item.label}</span>
-                                        </NavLink>
-                                    )
-                                })}
-                            </nav>
-                        </div>
-                    )}
 
                     <div className="header-actions">
                         {user && currentSite && (
@@ -144,7 +193,9 @@ function AppShell() {
                     </div>
                 </header>
 
-                <main className="content">
+                {user && <Sidebar />}
+
+                <main className={`content ${user ? '' : 'content-full'}`}>
                     <Routes>
                         <Route path="/login" element={<LoginPage />} />
                         <Route path="/" element={<RequireAuth><DashboardOperations /></RequireAuth>} />

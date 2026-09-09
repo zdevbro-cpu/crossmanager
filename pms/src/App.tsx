@@ -1,8 +1,15 @@
-import { Suspense, lazy } from 'react'
+import { Suspense, lazy, useState } from 'react'
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom'
 import {
   LayoutDashboard,
-  FileText
+  FileText,
+  FolderKanban,
+  CalendarRange,
+  Users,
+  Receipt,
+  Settings,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react'
 import './App.css'
 import Spinner from './components/Spinner'
@@ -47,17 +54,84 @@ const SchedulePage = lazy(() => import('./pages/Schedule'))
 const MembersPage = lazy(() => import('./pages/Members'))
 const SignupPage = lazy(() => import('./pages/Signup'))
 
-const navItems = [
-  { path: '/overview', label: '대시보드' },
-  { path: '/projects', label: '프로젝트' },
-  { path: '/schedule', label: '일정(WBS)' },
-  { path: '/resources', label: '자원' },
-  { path: '/contracts', label: '계약/견적' },
-
-  { id: 'documents', label: '문서관리', icon: <FileText size={20} />, path: '/documents' },
-  { id: 'reports', label: '보고서', icon: <LayoutDashboard size={20} />, path: '/reports' },
-  { path: '/members', label: '시스템관리' },
+// 상단바에 메뉴가 늘어 좌측 사이드바로 옮겼다.
+// 기존 메뉴는 하나도 빼지 않았고 위치와 묶음만 바뀐다.
+const navGroups = [
+  {
+    label: '',
+    items: [
+      { path: '/overview', label: '대시보드', icon: LayoutDashboard },
+    ],
+  },
+  {
+    label: '프로젝트',
+    items: [
+      { path: '/projects', label: '프로젝트', icon: FolderKanban },
+      { path: '/schedule', label: '일정(WBS)', icon: CalendarRange },
+      { path: '/resources', label: '자원', icon: Users },
+      { path: '/contracts', label: '계약/견적', icon: Receipt },
+    ],
+  },
+  {
+    label: '문서·보고',
+    items: [
+      { path: '/documents', label: '문서관리', icon: FileText },
+      { path: '/reports', label: '보고서', icon: LayoutDashboard },
+    ],
+  },
+  {
+    label: '설정',
+    items: [
+      { path: '/members', label: '시스템관리', icon: Settings },
+    ],
+  },
 ]
+
+function Sidebar() {
+  // 접힘 상태는 사람마다 취향이 갈려 브라우저에 남긴다.
+  const [collapsed, setCollapsed] = useState(
+    () => localStorage.getItem('pms.sidebar.collapsed') === '1'
+  )
+
+  const toggle = () => {
+    setCollapsed((v) => {
+      localStorage.setItem('pms.sidebar.collapsed', v ? '0' : '1')
+      return !v
+    })
+  }
+
+  return (
+    <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
+      <button
+        className="sidebar-toggle"
+        onClick={toggle}
+        title={collapsed ? '메뉴 펼치기' : '메뉴 접기'}
+      >
+        {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+      </button>
+
+      {navGroups.map((group, gi) => (
+        <div className="sidebar-group" key={group.label || `g${gi}`}>
+          {group.label && <p className="sidebar-group-label">{group.label}</p>}
+          {group.items.map((item) => {
+            const Icon = item.icon
+            return (
+              <NavLink
+                key={item.path}
+                to={item.path}
+                title={item.label}
+                className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
+              >
+                <Icon size={17} />
+                <span className="sidebar-link-text">{item.label}</span>
+              </NavLink>
+            )
+          })}
+        </div>
+      ))}
+    </aside>
+  )
+}
 
 
 
@@ -84,20 +158,6 @@ function App() {
               </div>
             </div>
 
-            <div className="nav-container">
-              <nav className="main-nav">
-                {navItems.map((item) => (
-                  <NavLink
-                    key={item.path}
-                    to={item.path}
-                    className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
-                  >
-                    {item.label}
-                  </NavLink>
-                ))}
-              </nav>
-            </div>
-
             <div className="header-actions">
               <ProjectSwitcher />
               {user ? (
@@ -115,7 +175,9 @@ function App() {
             </div>
           </header>
 
-          <main className="content">
+          {user && <Sidebar />}
+
+          <main className={`content ${user ? '' : 'content-full'}`}>
             <Suspense fallback={<Spinner />}>
               <Routes>
                 <Route path="/" element={<Navigate to="/overview" replace />} />

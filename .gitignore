@@ -166,6 +166,7 @@ server/init_dms_categories.js
 *.backup
 *.bak
 *.bak[0-9]
+*.bak_*
 env_customer.env*
 
 # DB 덤프
