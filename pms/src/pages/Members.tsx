@@ -163,7 +163,7 @@ function MembersPage() {
             cursor: 'pointer'
           }}
         >
-          발주처 관리
+          발주처 마스터
         </button>
         <button
           onClick={() => setActiveTab('templates')}
@@ -334,11 +334,12 @@ function MembersPage() {
         <PmsResourceAdmin projectId={assignProjectId} />
       )}
 
-      {/* Tab Content: Clients — 발주처는 프로젝트의 상위 개념이라 PMS 에서 등록한다.
-          다른 모듈(SMS 마스터 등)은 조회만 한다. */}
+      {/* Tab Content: 발주처 마스터 — 등록·상세·수정은 여기서 한다.
+          프로젝트 화면은 이 목록을 가져다 고르기만 하고, 목록에 없을 때만
+          간단 등록(이름·코드)으로 추가한다. */}
       {activeTab === 'clients' && (
         <section className="card">
-          <p className="card-label">발주처 관리</p>
+          <p className="card-label">발주처 마스터</p>
           <ClientPanel />
         </section>
       )}

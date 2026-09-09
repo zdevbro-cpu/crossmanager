@@ -1475,7 +1475,13 @@ app.delete('/api/contracts/:id', async (req, res) => {
 app.get('/api/projects', async (req, res) => {
     try {
         // 본사(is_hq)는 현장이 아니므로 프로젝트 목록에서 제외한다.
-        const { rows } = await pool.query('SELECT * FROM projects WHERE is_hq = FALSE ORDER BY name')
+        // 발주처는 client_id 로만 들고 있어 이름을 붙여 준다. 화면은 이름을 보여 준다.
+        const { rows } = await pool.query(`
+            SELECT p.*, c.name AS client_name, c.regulation_type,
+                   TO_CHAR(p.start_date, 'YYYY-MM-DD') AS start_date,
+                   TO_CHAR(p.end_date,   'YYYY-MM-DD') AS end_date
+              FROM projects p LEFT JOIN client c ON c.id = p.client_id
+             WHERE p.is_hq = FALSE ORDER BY p.name`)
         res.json(rows)
     } catch (err) {
         console.error(err)
@@ -2924,23 +2930,43 @@ app.get('/api/projects/:id', async (req, res) => {
     }
 })
 
+// 프로젝트 응답에 발주처 이름·규제유형을 붙인다.
+// 화면은 이름을 보여 주는데 테이블에는 client_id 만 있다.
+async function withClient(row) {
+    if (!row || !row.client_id) return { ...row, client_name: null, regulation_type: null }
+    const { rows } = await pool.query(
+        'SELECT name, regulation_type FROM client WHERE id = $1', [row.client_id])
+    return { ...row, client_name: rows[0]?.name || null, regulation_type: rows[0]?.regulation_type || null }
+}
+
+// 날짜는 화면이 YYYY-MM-DD 로 다룬다. Date 객체를 그대로 주면 시간대가 밀려
+// 하루 전으로 보인다. 목록 조회는 TO_CHAR 로 맞춰 두었으니 여기서도 맞춘다.
+function ymdFields(row) {
+    if (!row) return row
+    const fix = (v) => (v instanceof Date
+        ? new Date(v.getTime() - v.getTimezoneOffset() * 60000).toISOString().slice(0, 10)
+        : v)
+    return { ...row, start_date: fix(row.start_date), end_date: fix(row.end_date) }
+}
+
 app.post('/api/projects', async (req, res) => {
     try {
-        const { code, name, client, address, start_date, end_date, security_level, pm_name, regulation_type, status } = req.body
+        // 발주처는 client 마스터를 참조한다. 자유 입력 문자열을 받지 않는다.
+        // 예전 코드는 없는 컬럼(client·regulation_type·site_id)을 참조해 저장이 실패했다.
+        const { code, name, clientId, address, start_date, end_date,
+                security_level, pm_name, status, description } = req.body
 
-        const query = `
-            INSERT INTO projects (code, name, client, address, start_date, end_date, security_level, pm_name, regulation_type, status)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-            RETURNING id, code, name, client, address, 
-                      TO_CHAR(start_date, 'YYYY-MM-DD') as start_date, 
-                      TO_CHAR(end_date, 'YYYY-MM-DD') as end_date, 
-                      description, security_level, pm_name, regulation_type, status, created_at, updated_at, site_id
-        `
+        const { rows } = await pool.query(`
+            INSERT INTO projects (code, name, client_id, address, start_date, end_date,
+                                  security_level, pm_name, status, description)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,COALESCE($9,'ACTIVE'),$10)
+            RETURNING *`,
+            [code, name, clientId || null, address || null, start_date || null, end_date || null,
+             security_level || null, pm_name || null, status || null, description || null])
 
-        const { rows } = await pool.query(query, [code, name, client, address, start_date, end_date, security_level, pm_name, regulation_type, status])
-        res.status(201).json(rows[0])
+        res.status(201).json(ymdFields(await withClient(rows[0])))
     } catch (err) {
-        console.error(err)
+        console.error('[projects] create', err)
         res.status(500).json({ error: 'Failed to create project', details: err.message })
     }
 })
@@ -2948,28 +2974,33 @@ app.post('/api/projects', async (req, res) => {
 app.put('/api/projects/:id', async (req, res) => {
     try {
         const { id } = req.params
-        const { code, name, client, address, start_date, end_date, security_level, pm_name, regulation_type, status } = req.body
+        const { code, name, clientId, address, start_date, end_date,
+                security_level, pm_name, status, description } = req.body
 
-        const query = `
-            UPDATE projects 
-            SET code = $1, name = $2, client = $3, address = $4, start_date = $5, end_date = $6,
-                security_level = $7, pm_name = $8, regulation_type = $9, status = $10, updated_at = CURRENT_TIMESTAMP
-            WHERE id = $11
-            RETURNING id, code, name, client, address, 
-                      TO_CHAR(start_date, 'YYYY-MM-DD') as start_date, 
-                      TO_CHAR(end_date, 'YYYY-MM-DD') as end_date, 
-                      description, security_level, pm_name, regulation_type, status, created_at, updated_at, site_id
-        `
+        // COALESCE 로 넘어오지 않은 값은 그대로 둔다. 화면이 일부 필드만
+        // 보내는 경우가 있어 통째로 덮으면 값이 지워진다.
+        const { rows } = await pool.query(`
+            UPDATE projects SET
+                code           = COALESCE($2, code),
+                name           = COALESCE($3, name),
+                client_id      = $4,
+                address        = COALESCE($5, address),
+                start_date     = COALESCE($6, start_date),
+                end_date       = COALESCE($7, end_date),
+                security_level = COALESCE($8, security_level),
+                pm_name        = COALESCE($9, pm_name),
+                status         = COALESCE($10, status),
+                description    = COALESCE($11, description),
+                updated_at     = NOW()
+             WHERE id = $1 RETURNING *`,
+            [id, code || null, name || null, clientId ?? null, address || null,
+             start_date || null, end_date || null, security_level || null,
+             pm_name || null, status || null, description || null])
 
-        const { rows } = await pool.query(query, [code, name, client, address, start_date, end_date, security_level, pm_name, regulation_type, status, id])
-
-        if (rows.length === 0) {
-            return res.status(404).json({ error: 'Project not found' })
-        }
-
-        res.json(rows[0])
+        if (!rows.length) return res.status(404).json({ error: 'Project not found' })
+        res.json(ymdFields(await withClient(rows[0])))
     } catch (err) {
-        console.error(err)
+        console.error('[projects] update', err)
         res.status(500).json({ error: 'Failed to update project', details: err.message })
     }
 })
