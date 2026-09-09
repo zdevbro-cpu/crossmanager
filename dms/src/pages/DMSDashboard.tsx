@@ -520,14 +520,16 @@ export default function DMSDashboard() {
 
             <div className="content-split">
                 <nav className="nav-panel card sidebar-explorer">
-                    <div className="sidebar-header" style={{ fontSize: '1.2rem', fontWeight: 800, padding: '20px', borderBottom: '1px solid #1f2228' }}>문서 탐색기</div>
-                    <div className="nav-group" style={{ padding: '20px' }}>
+                    {/* 제목·현장선택·분류를 위로 당긴다. 패널(1.25rem) 위에 20px 이
+                        더 붙어 트리가 화면 한참 아래에서 시작했다. */}
+                    <div className="sidebar-header" style={{ fontSize: '1.05rem', fontWeight: 800, padding: '12px 16px', borderBottom: '1px solid #1f2228' }}>문서 탐색기</div>
+                    <div className="nav-group" style={{ padding: '12px 16px' }}>
                         <select className="project-select" value={selectedId || ''} onChange={e => setSelectedId(e.target.value)}>
                             {projects?.map((p: any) => (<option key={p.id} value={p.id}>[{p.code}] {p.name}</option>))}
                         </select>
                     </div>
                     
-                    <div className="nav-group" style={{ padding: '0 20px' }}>
+                    <div className="nav-group" style={{ padding: '0 16px 16px' }}>
                         <div className="category-tree" style={{ maxHeight: 'calc(100vh - 350px)', overflowY: 'auto' }}>
                             {categoryStructure?.map(cat => (
                                 <div key={cat.id} className="tree-node">

@@ -1212,3 +1212,11 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+
+/* 탐색기 패널은 안쪽 요소가 각자 여백을 갖는다. 패널에도 주면 두 겹이 되어
+ * 트리가 화면 한참 아래에서 시작한다. */
+.sidebar-explorer {
+    padding: 0;
+    gap: 0;
+}
