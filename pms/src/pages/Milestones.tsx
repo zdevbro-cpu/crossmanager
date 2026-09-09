@@ -32,6 +32,24 @@ interface Task {
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토']
 
+// 겹쳐 보는 다른 일정. 마일스톤 외에는 읽기 전용이다.
+// 원본 화면에서 고쳐야 이력이 남는다. 여기서 고치게 하면 어디서 바뀌었는지
+// 알 수 없어진다.
+interface CalEvent {
+    id: string
+    source: 'MILESTONE' | 'TBM' | 'EDU' | 'RA' | 'EXPIRY'
+    title: string
+    start: string
+    end: string
+}
+
+const SOURCE_META: Record<string, { label: string; cls: string }> = {
+    TBM: { label: 'TBM', cls: 'tbm' },
+    EDU: { label: '교육', cls: 'edu' },
+    RA: { label: '위험성평가', cls: 'ra' },
+    EXPIRY: { label: '만료', cls: 'expiry' },
+}
+
 const ymd = (d: Date) => {
     // toISOString 은 UTC 로 밀려 하루 전이 된다. 현지 날짜를 그대로 쓴다.
     const m = String(d.getMonth() + 1).padStart(2, '0')
@@ -72,6 +90,9 @@ export default function MilestonesPage() {
     const [editing, setEditing] = useState<Partial<Task> | null>(null)
     const [busy, setBusy] = useState(false)
 
+    const [events, setEvents] = useState<CalEvent[]>([])
+    const [showOthers, setShowOthers] = useState(true)
+
     const project = projects?.find((p: any) => p.id === selectedId)
 
     const load = useCallback(async () => {
@@ -92,6 +113,18 @@ export default function MilestonesPage() {
 
     const cells = useMemo(() => buildGrid(year, month), [year, month])
 
+    // 달력에 그려지는 범위(앞뒤 달 끝자락 포함)만 읽는다. 전체를 받으면
+    // 쌓일수록 느려진다.
+    useEffect(() => {
+        if (!showOthers || !cells.length) { setEvents([]); return }
+        const from = ymd(cells[0])
+        const to = ymd(cells[cells.length - 1])
+        const q = selectedId ? `&projectId=${selectedId}` : ''
+        apiClient.get<CalEvent[]>(`/calendar?from=${from}&to=${to}${q}`)
+            .then(r => setEvents(Array.isArray(r.data) ? r.data : []))
+            .catch(() => setEvents([]))   // 겹쳐 보기가 안 돼도 마일스톤은 보여야 한다
+    }, [cells, selectedId, showOthers, tasks])
+
     // 날짜별로 걸치는 일정을 모은다. 기간이 여러 날이면 그 날 전부에 나온다.
     const byDate = useMemo(() => {
         const map = new Map<string, Task[]>()
@@ -109,6 +142,20 @@ export default function MilestonesPage() {
         })
         return map
     }, [tasks])
+
+    const eventsByDate = useMemo(() => {
+        const map = new Map<string, CalEvent[]>()
+        events.filter(e => e.source !== 'MILESTONE').forEach(e => {
+            let cur = e.start
+            let guard = 0
+            while (cur <= e.end && guard++ < 400) {
+                if (!map.has(cur)) map.set(cur, [])
+                map.get(cur)!.push(e)
+                cur = addDays(cur, 1)
+            }
+        })
+        return map
+    }, [events])
 
     const move = (delta: number) => {
         const d = new Date(year, month + delta, 1)
@@ -182,6 +229,13 @@ export default function MilestonesPage() {
                     <strong className="ms-title">{year}. {String(month + 1).padStart(2, '0')}</strong>
                     <button className="ms-btn" onClick={() => move(1)} title="다음 달"><ChevronRight size={16} /></button>
                     <button className="ms-btn" onClick={() => { setYear(today.getFullYear()); setMonth(today.getMonth()) }}>오늘</button>
+                    <button
+                        className={`ms-btn ${showOthers ? 'on' : ''}`}
+                        onClick={() => setShowOthers(v => !v)}
+                        title="TBM·교육·위험성평가·만료를 함께 표시합니다"
+                    >
+                        {showOthers ? '다른 일정 켬' : '다른 일정 끔'}
+                    </button>
                     <button className="ms-btn primary" onClick={() => openNew(todayStr)}>
                         <Plus size={15} /> 마일스톤
                     </button>
@@ -225,10 +279,38 @@ export default function MilestonesPage() {
                                     {t.name}
                                 </button>
                             ))}
+
+                            {/* 다른 모듈 일정은 읽기 전용이다. 눌러도 열리지 않는다.
+                                여기서 고치게 하면 어디서 바뀌었는지 알 수 없어진다. */}
+                            {(eventsByDate.get(key) || []).map(ev => {
+                                const meta = SOURCE_META[ev.source]
+                                if (!meta) return null
+                                return (
+                                    <span
+                                        key={ev.source + ev.id + key}
+                                        className={`ms-ev ${meta.cls}`}
+                                        title={`[${meta.label}] ${ev.title} (${ev.start} ~ ${ev.end})`}
+                                    >
+                                        {meta.label} · {ev.title}
+                                    </span>
+                                )
+                            })}
                         </div>
                     )
                 })}
             </div>
+
+            {showOthers && (
+                <div className="ms-legend">
+                    <span className="ms-ev ms-legend-chip">마일스톤</span>
+                    {Object.values(SOURCE_META).map(m => (
+                        <span key={m.cls} className={`ms-ev ${m.cls} ms-legend-chip`}>{m.label}</span>
+                    ))}
+                    <span className="muted" style={{ fontSize: '0.78rem' }}>
+                        마일스톤만 여기서 등록·수정합니다. 나머지는 각 화면에서 관리합니다.
+                    </span>
+                </div>
+            )}
 
             {!selectedId && (
                 <p className="muted" style={{ marginTop: '1rem' }}>

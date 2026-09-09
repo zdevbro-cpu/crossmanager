@@ -1961,6 +1961,83 @@ app.get('/api/projects', async (req, res) => {
 })
 
 // Tasks API
+/**
+ * 통합 일정 조회.
+ *
+ * 왜 한 곳에서 모으는가
+ *   마일스톤·TBM·교육·위험성평가·만료가 각자 화면에 흩어져 있어, 현장에서
+ *   "이번 주에 뭘 해야 하나"를 보려면 화면 네 개를 돌아야 했다.
+ *   날짜를 축으로 하는 것은 같으므로 한 달력에 겹쳐 보여 준다.
+ *
+ * 원본은 그대로 둔다. 여기서는 읽어서 같은 모양으로 바꿔 줄 뿐이다.
+ * 일정 전용 테이블을 새로 만들면 두 벌을 맞춰야 하고 반드시 어긋난다.
+ *
+ * 날짜 컬럼이 없는 것(패트롤·체크리스트)은 넣지 않는다. created_at 을
+ * 일정으로 쓰면 "언제 하기로 한 일"이 아니라 "언제 입력했는지"가 찍힌다.
+ */
+app.get('/api/calendar', async (req, res) => {
+    try {
+        const { projectId, from, to } = req.query
+        if (!from || !to) return res.status(400).json({ error: 'from·to 는 필수입니다' })
+
+        const pj = projectId || null
+        const q = async (sql) => {
+            try { return (await pool.query(sql, [pj, from, to])).rows } catch (e) {
+                // 한 갈래가 막혀도 나머지는 보여 준다. 달력이 통째로 비면 원인을 못 찾는다.
+                console.warn('[calendar]', e.message)
+                return []
+            }
+        }
+
+        const rows = [].concat(
+            await q(`SELECT id::text, 'MILESTONE' AS source, name AS title,
+                            TO_CHAR(start_date,'YYYY-MM-DD') AS start,
+                            TO_CHAR(COALESCE(end_date, start_date),'YYYY-MM-DD') AS "end"
+                       FROM tasks
+                      WHERE ($1::uuid IS NULL OR project_id = $1)
+                        AND start_date IS NOT NULL
+                        AND start_date <= $3::date AND COALESCE(end_date, start_date) >= $2::date`),
+
+            await q(`SELECT id::text, 'TBM' AS source,
+                            COALESCE(NULLIF(work_content,''), 'TBM') AS title,
+                            TO_CHAR(date,'YYYY-MM-DD') AS start, TO_CHAR(date,'YYYY-MM-DD') AS "end"
+                       FROM sms_dris
+                      WHERE ($1::uuid IS NULL OR project_id = $1)
+                        AND date BETWEEN $2::date AND $3::date`),
+
+            await q(`SELECT id::text, 'EDU' AS source,
+                            COALESCE(NULLIF(title,''), '교육') AS title,
+                            TO_CHAR(date,'YYYY-MM-DD') AS start, TO_CHAR(date,'YYYY-MM-DD') AS "end"
+                       FROM sms_educations
+                      WHERE ($1::uuid IS NULL OR project_id = $1)
+                        AND date BETWEEN $2::date AND $3::date`),
+
+            // 위험성평가는 적용기간이 있으면 그 기간, 없으면 작성일 하루로 본다.
+            await q(`SELECT id::text, 'RA' AS source,
+                            COALESCE(NULLIF(process_name,''), '위험성평가') AS title,
+                            TO_CHAR(COALESCE(period_from, date),'YYYY-MM-DD') AS start,
+                            TO_CHAR(COALESCE(period_to, period_from, date),'YYYY-MM-DD') AS "end"
+                       FROM sms_risk_assessments
+                      WHERE ($1::uuid IS NULL OR project_id = $1)
+                        AND COALESCE(period_from, date) <= $3::date
+                        AND COALESCE(period_to, period_from, date) >= $2::date`),
+
+            await q(`SELECT id::text, 'EXPIRY' AS source,
+                            COALESCE(NULLIF(title,''), '만료 예정') AS title,
+                            TO_CHAR(expire_date,'YYYY-MM-DD') AS start,
+                            TO_CHAR(expire_date,'YYYY-MM-DD') AS "end"
+                       FROM expiry_watch
+                      WHERE ($1::uuid IS NULL OR project_id = $1)
+                        AND expire_date BETWEEN $2::date AND $3::date`),
+        )
+
+        res.json(rows)
+    } catch (err) {
+        console.error('[calendar]', err)
+        res.status(500).json({ error: '일정 조회 실패', details: err.message })
+    }
+})
+
 app.get('/api/tasks', async (req, res) => {
     try {
         const { projectId } = req.query
