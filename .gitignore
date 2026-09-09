@@ -163,10 +163,9 @@ server/fix_db.ps1
 server/init_dms_categories.js
 
 # 작업 전 백업본 — 로컬에만 둔다 (CLAUDE.md 수정 전 백업 규칙)
+# 수정 전 백업본은 전부 제외한다(.bak, .bak2_HHMMSS, .backup ...)
 *.backup
-*.bak
-*.bak[0-9]
-*.bak_*
+*.bak*
 env_customer.env*
 
 # DB 덤프
