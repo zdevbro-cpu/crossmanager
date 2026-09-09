@@ -508,18 +508,15 @@ export default function DMSDashboard() {
                     <div className="dash-eyebrow">DOCUMENT MANAGEMENT</div>
                     <h2 className="dash-title">[{selectedProj?.code || '...'}] {selectedProj?.name || '프로젝트 선택'}</h2>
                 </div>
-                {/* 검색은 아래 문서 검색 필터가, 등록은 경로 옆 「이 분류에 문서 등록」이
-                    맡는다. 같은 일을 하는 칸이 두 개면 어느 쪽이 무엇을 거는지 알 수 없다. */}
+                {/* 검색칸·새 문서 버튼을 걷어내고 그 빈자리를 필터가 쓴다.
+                    본문 안에 두면 탐색기 폭에 눌려 칸이 좁아지고 문서 목록이
+                    한 화면 아래로 밀린다. 여기 두면 제목 옆 빈 공간을 그대로 쓴다. */}
+                <DocumentSearchBar
+                    onSearch={handleSearch}
+                    onClear={() => setSearchResults(null)}
+                    resultCount={searchResults === null ? null : searchResults.length}
+                />
             </header>
-
-            {/* 머리말 오른쪽 검색칸을 없앴으니 필터를 그 자리로 올린다.
-                본문 안에 두면 탐색기 폭에 눌려 칸이 좁아지고, 문서 목록이
-                한 화면 아래로 밀린다. */}
-            <DocumentSearchBar
-                onSearch={handleSearch}
-                onClear={() => setSearchResults(null)}
-                resultCount={searchResults === null ? null : searchResults.length}
-            />
 
             <div className="content-split">
                 <nav className="nav-panel card sidebar-explorer">
