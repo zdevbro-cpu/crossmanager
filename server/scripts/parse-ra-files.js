@@ -45,7 +45,11 @@ const norm = (v) => {
     return t.includes('�') ? '' : t
 }
 const isBlank = (v) => PLACEHOLDER.includes(norm(v))
-const gradeOf = (f, s) => { const v = f * s; return v >= 20 ? 'A' : v >= 15 ? 'B' : v >= 10 ? 'C' : 'D' }
+// 위험성 등급 — 빈도x강도 점수를 먼저 내고 등급으로 치환한다.
+// 경계는 현장 RA 파일 142행을 역산해 확정했다(6/8/9=D, 10/12=C, 15/16=B, 20=A).
+// 양식 하단 안내는 A(20~25) B(15~20) C(10~15) D(5~10) E(1~5) 로 경계가 겹쳐 있는데,
+// 실사용은 '이상' 기준이다. E 는 주로 개선 후 위험성에 쓰인다.
+const gradeOf = (f, s) => { const v = f * s; return v >= 20 ? 'A' : v >= 15 ? 'B' : v >= 10 ? 'C' : v >= 5 ? 'D' : 'E' }
 
 function walk(dir, out = [], depth = 0) {
     if (depth > 4) return out

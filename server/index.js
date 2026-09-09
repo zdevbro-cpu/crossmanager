@@ -2195,7 +2195,8 @@ app.get('/api/sms/risk-assessments/:id', async (req, res) => {
         if (raRes.rows.length === 0) return res.status(404).json({ error: 'Assessment not found' })
 
         // Get Risk Items
-        const itemsRes = await pool.query('SELECT * FROM sms_risk_items WHERE assessment_id = $1 ORDER BY risk_factor', [id])
+        // 작성 순서를 유지한다. 이름순으로 섞이면 현장 양식과 순서가 달라진다.
+        const itemsRes = await pool.query('SELECT * FROM sms_risk_items WHERE assessment_id = $1 ORDER BY sort_order NULLS LAST, created_at', [id])
 
         res.json({
             ...raRes.rows[0],
@@ -2204,6 +2205,72 @@ app.get('/api/sms/risk-assessments/:id', async (req, res) => {
     } catch (err) {
         console.error(err)
         res.status(500).json({ error: 'Failed to fetch assessment details' })
+    }
+})
+
+
+// 위험성평가서를 현장 양식 그대로 엑셀로 내려받는다.
+// 화면에서 HTML 로 그려 인쇄하면 22열·병합셀 338개인 현장 양식을 재현할 수 없다.
+// 원본 xlsx 에 값만 채워 서식을 그대로 유지한다(설계서 6.4).
+app.get('/api/sms/risk-assessments/:id/export', async (req, res) => {
+    try {
+        const { id } = req.params
+        const raRes = await pool.query(`
+            SELECT r.*, p.name AS project_name
+              FROM sms_risk_assessments r
+         LEFT JOIN projects p ON p.id = r.project_id
+             WHERE r.id = $1`, [id])
+        if (raRes.rows.length === 0) return res.status(404).json({ error: '평가서를 찾을 수 없습니다' })
+
+        const items = await pool.query(`
+            SELECT i.*, l.name AS location_name
+              FROM sms_risk_items i
+         LEFT JOIN location l ON l.id = i.location_id
+             WHERE i.assessment_id = $1
+             ORDER BY i.sort_order NULLS LAST, i.created_at`, [id])
+
+        // 현장·발주처에 등록된 양식이 있으면 그것으로 출력한다.
+        // 없으면 기본(크로스) 양식으로 떨어진다.
+        const ra = raRes.rows[0]
+        const tplRes = await pool.query(`
+            SELECT t.* FROM template t
+             WHERE t.doc_type_code = 'RA' AND t.is_active AND t.storage_key IS NOT NULL
+               AND (t.project_id = $1 OR t.project_id IS NULL)
+               AND (t.client_id IS NULL OR t.client_id = (
+                    SELECT client_id FROM projects WHERE id = $1))
+             ORDER BY (t.project_id IS NOT NULL) DESC, (t.client_id IS NOT NULL) DESC
+             LIMIT 1`, [ra.project_id])
+
+        let buf
+        if (tplRes.rowCount > 0) {
+            const tpl = tplRes.rows[0]
+            const m = await pool.query(
+                'SELECT field_key, col_index FROM template_mapping WHERE template_id = $1', [tpl.id])
+            const columns = {}
+            m.rows.forEach(r => { if (r.field_key) columns[r.field_key] = r.col_index })
+
+            const gdrive = require('./lib/drive')
+            const dl = await gdrive.downloadFromDrive(tpl.storage_key)
+            const chunks = []
+            for await (const c of dl.stream) chunks.push(c)
+
+            const { renderWithTemplate } = require('./lib/ra-template')
+            buf = await renderWithTemplate(Buffer.concat(chunks), { ...tpl, columns },
+                { ...ra, items: items.rows })
+        } else {
+            const { buildRaWorkbook } = require('./lib/ra-export')
+            buf = await buildRaWorkbook({ ...ra, items: items.rows })
+        }
+
+        const dt = (ra.date ? new Date(ra.date) : new Date()).toISOString().slice(0, 10)
+        const safe = String(ra.process_name || '').replace(/[\/:*?"<>|]/g, '_')
+        const name = `위험성평가표_${safe}_${dt}.xlsx`
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(name)}`)
+        res.send(Buffer.from(buf))
+    } catch (err) {
+        console.error('[RA export]', err)
+        res.status(500).json({ error: '엑셀 생성 실패', details: err.message })
     }
 })
 
@@ -2224,28 +2291,82 @@ app.post('/api/sms/risk-assessments', async (req, res) => {
         const raId = raRes.rows[0].id
 
         // Create Items
+        // 빈도x강도로 등급을 매긴다. 부록 A.4 매트릭스이며 현장 실측값과 일치한다.
+        const gradeOf = (f, s) => {
+            const v = (f || 0) * (s || 0)
+            return v >= 20 ? 'A' : v >= 15 ? 'B' : v >= 10 ? 'C' : v >= 5 ? 'D' : v > 0 ? 'E' : null
+        }
+
+        const usedHazardIds = []
         if (items && items.length > 0) {
+            let order = 0
             for (const item of items) {
+                order++
                 await client.query(`
                     INSERT INTO sms_risk_items (
-                        assessment_id, risk_factor, risk_type, frequency, severity, 
-                        mitigation_measure, action_manager, action_deadline
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                        assessment_id, risk_factor, risk_type, frequency, severity,
+                        mitigation_measure, action_manager, action_deadline,
+                        hazard_id, hazard_class, legal_basis, current_control, grade, sort_order,
+                        residual_frequency, residual_severity, residual_grade
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
                 `, [
                     raId,
                     item.riskFactor,
-                    item.riskType || '기??',
+                    item.riskType || '기타',
                     item.frequency || 1,
                     item.severity || 1,
                     item.mitigationMeasure || '',
                     item.actionManager || '',
-                    item.actionDeadline || null
+                    item.actionDeadline || null,
+                    item.hazardId || null,
+                    item.hazardClass || null,
+                    item.legalBasis || null,
+                    item.currentControl || null,
+                    gradeOf(item.frequency, item.severity),
+                    order,
+                    item.residualFrequency || null,
+                    item.residualSeverity || null,
+                    gradeOf(item.residualFrequency, item.residualSeverity)
                 ])
+                if (item.hazardId) usedHazardIds.push(item.hazardId)
             }
         }
 
+        // 라이브러리에서 가져온 항목은 사용 횟수를 올린다. 자주 쓰는 것이 위로 오게 한다.
+        if (usedHazardIds.length) {
+            await client.query(
+                'UPDATE hazard_item SET usage_count = usage_count + 1 WHERE id = ANY($1::bigint[])',
+                [usedHazardIds])
+        }
+
+        // 작성한 평가서를 DMS 에 문서로 등록한다.
+        // 개요서 4.1 — 업무 모듈이 만들고 DMS 는 보관·유통만 한다.
+        let documentId = null
+        try {
+            const HQ = '00000000-0000-0000-0000-000000000001'
+            const docName = `위험성평가_${processName || ''}_${new Date().toISOString().slice(0, 10)}`
+            const d = await client.query(`
+                INSERT INTO documents (project_id, category, sub_category, type, name, status,
+                                       security_level, current_version, doc_type_code)
+                VALUES ($1, '01_안전_보건', '03_위험성_평가', 'RA', $2, 'DRAFT', 'NORMAL', 'v1', 'RA')
+                RETURNING id`, [projectId || HQ, docName])
+            documentId = d.rows[0].id
+
+            // 문서와 업무 레코드를 잇는다. DMS 는 업무 테이블을 직접 참조하지 않는다(설계서 2.1).
+            await client.query(`
+                INSERT INTO document_link (document_id, entity_type, entity_id, relation)
+                VALUES ($1, 'RA', $2, 'source')
+                ON CONFLICT DO NOTHING`, [documentId, String(raId)])
+
+            await client.query('UPDATE sms_risk_assessments SET document_id = $1 WHERE id = $2',
+                [documentId, raId])
+        } catch (e) {
+            // 문서 등록 실패가 평가서 저장을 막지 않게 한다.
+            console.warn('[RA] DMS 등록 실패:', e.message)
+        }
+
         await client.query('COMMIT')
-        res.status(201).json(raRes.rows[0])
+        res.status(201).json({ ...raRes.rows[0], documentId })
     } catch (err) {
         await client.query('ROLLBACK')
         console.error(err)

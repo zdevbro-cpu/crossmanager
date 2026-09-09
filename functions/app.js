@@ -2295,10 +2295,39 @@ app.get('/api/sms/risk-assessments/:id/export', async (req, res) => {
              WHERE i.assessment_id = $1
              ORDER BY i.sort_order NULLS LAST, i.created_at`, [id])
 
-        const { buildRaWorkbook } = require('./lib/ra-export')
-        const buf = await buildRaWorkbook({ ...raRes.rows[0], items: items.rows })
-
+        // 현장·발주처에 등록된 양식이 있으면 그것으로 출력한다.
+        // 없으면 기본(크로스) 양식으로 떨어진다.
         const ra = raRes.rows[0]
+        const tplRes = await pool.query(`
+            SELECT t.* FROM template t
+             WHERE t.doc_type_code = 'RA' AND t.is_active AND t.storage_key IS NOT NULL
+               AND (t.project_id = $1 OR t.project_id IS NULL)
+               AND (t.client_id IS NULL OR t.client_id = (
+                    SELECT client_id FROM projects WHERE id = $1))
+             ORDER BY (t.project_id IS NOT NULL) DESC, (t.client_id IS NOT NULL) DESC
+             LIMIT 1`, [ra.project_id])
+
+        let buf
+        if (tplRes.rowCount > 0) {
+            const tpl = tplRes.rows[0]
+            const m = await pool.query(
+                'SELECT field_key, col_index FROM template_mapping WHERE template_id = $1', [tpl.id])
+            const columns = {}
+            m.rows.forEach(r => { if (r.field_key) columns[r.field_key] = r.col_index })
+
+            const gdrive = require('./lib/drive')
+            const dl = await gdrive.downloadFromDrive(tpl.storage_key)
+            const chunks = []
+            for await (const c of dl.stream) chunks.push(c)
+
+            const { renderWithTemplate } = require('./lib/ra-template')
+            buf = await renderWithTemplate(Buffer.concat(chunks), { ...tpl, columns },
+                { ...ra, items: items.rows })
+        } else {
+            const { buildRaWorkbook } = require('./lib/ra-export')
+            buf = await buildRaWorkbook({ ...ra, items: items.rows })
+        }
+
         const dt = (ra.date ? new Date(ra.date) : new Date()).toISOString().slice(0, 10)
         const safe = String(ra.process_name || '').replace(/[\/:*?"<>|]/g, '_')
         const name = `위험성평가표_${safe}_${dt}.xlsx`

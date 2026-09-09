@@ -161,3 +161,12 @@ pms/.env
 # 비밀번호 하드코딩된 일회성 스크립트
 server/fix_db.ps1
 server/init_dms_categories.js
+
+# 작업 전 백업본 — 로컬에만 둔다 (CLAUDE.md 수정 전 백업 규칙)
+*.backup
+*.bak
+*.bak[0-9]
+env_customer.env*
+
+# DB 덤프
+backup_*.sql

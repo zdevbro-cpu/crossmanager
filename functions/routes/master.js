@@ -464,6 +464,111 @@ const createMasterRouter = (pool) => {
         } catch (e) { fail(res, e, '제출 항목 조회 실패') }
     })
 
+
+    // ── RA 양식(템플릿) 등록 ─────────────────────────────────
+    // 고객사마다 양식이 다르다. 열 좌표를 코드에 박으면 고객사가 늘 때마다
+    // 코드를 고쳐야 하므로, 양식 파일과 매핑을 여기에 둔다(개요서 3.1).
+
+    // 업로드 전 구조 분석 — 사람이 확인하고 고칠 수 있게 추정값을 돌려준다.
+    router.post('/ra-templates/analyze', async (req, res) => {
+        try {
+            const b64 = req.body && req.body.fileBase64
+            if (!b64) return res.status(400).json({ error: '양식 파일이 필요합니다' })
+            const { analyzeTemplate } = require('../lib/ra-template')
+            const result = await analyzeTemplate(Buffer.from(b64, 'base64'))
+            res.json(result)
+        } catch (e) { fail(res, e, '양식 분석 실패') }
+    })
+
+    router.get('/ra-templates', async (req, res) => {
+        try {
+            const { clientId, projectId } = req.query
+            const { rows } = await pool.query(`
+                SELECT t.*, c.name AS client_name, p.name AS project_name
+                  FROM template t
+             LEFT JOIN client c ON c.id = t.client_id
+             LEFT JOIN projects p ON p.id = t.project_id
+                 WHERE t.doc_type_code = 'RA' AND t.is_active
+                   AND ($1::bigint IS NULL OR t.client_id = $1)
+                   AND ($2::uuid IS NULL OR t.project_id = $2 OR t.project_id IS NULL)
+                 ORDER BY t.client_id NULLS LAST, t.name`,
+                [clientId || null, projectId || null])
+            res.json(rows)
+        } catch (e) { fail(res, e, '양식 조회 실패') }
+    })
+
+    // 등록 — 파일은 드라이브에 두고 DB 에는 참조와 매핑만 남긴다.
+    router.post('/ra-templates', async (req, res) => {
+        try {
+            const {
+                templateCode, name, clientId, projectId, fileBase64, fileName,
+                sheetIndex, headerRow, dataStartRow, columns, headerCells,
+                gradeScale, tailMarker, memo,
+            } = req.body
+
+            if (!templateCode || !name) return res.status(400).json({ error: '코드와 이름은 필수입니다' })
+            if (!columns || !columns.hazardDesc) {
+                return res.status(400).json({ error: '위험요인 열 매핑은 반드시 지정해야 합니다' })
+            }
+
+            let storageKey = null
+            if (fileBase64) {
+                const gdrive = require('../lib/drive')
+                const up = await gdrive.uploadToDrive({
+                    buffer: Buffer.from(fileBase64, 'base64'),
+                    fileName: fileName || `${templateCode}.xlsx`,
+                    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                })
+                storageKey = up.driveFileId
+            }
+
+            const { rows } = await pool.query(`
+                INSERT INTO template (template_code, name, client_id, project_id, doc_type_code,
+                                      engine, storage_key, sheet_index, header_row, data_start_row,
+                                      header_cells, grade_scale, tail_marker, memo)
+                VALUES ($1,$2,$3,$4,'RA','XLSX_CELL',$5,$6,$7,$8,$9,$10,$11,$12)
+                ON CONFLICT (template_code) DO UPDATE SET
+                    name = EXCLUDED.name, client_id = EXCLUDED.client_id,
+                    project_id = EXCLUDED.project_id, storage_key = COALESCE(EXCLUDED.storage_key, template.storage_key),
+                    sheet_index = EXCLUDED.sheet_index, header_row = EXCLUDED.header_row,
+                    data_start_row = EXCLUDED.data_start_row, header_cells = EXCLUDED.header_cells,
+                    grade_scale = EXCLUDED.grade_scale, tail_marker = EXCLUDED.tail_marker,
+                    memo = EXCLUDED.memo, updated_at = NOW()
+                RETURNING *`,
+                [templateCode, name, clientId || null, projectId || null, storageKey,
+                 sheetIndex || 0, headerRow || null, dataStartRow || null,
+                 JSON.stringify(headerCells || {}), gradeScale || 'A_E', tailMarker || null, memo || null])
+
+            const tpl = rows[0]
+
+            // 열 매핑은 행으로 남긴다. 화면에서 한 줄씩 고칠 수 있어야 한다.
+            await pool.query('DELETE FROM template_mapping WHERE template_id = $1', [tpl.id])
+            let i = 0
+            for (const [field, col] of Object.entries(columns)) {
+                if (!col) continue
+                await pool.query(`
+                    INSERT INTO template_mapping (template_id, field_key, col_index, target, source_expr, sort_order)
+                    VALUES ($1,$2,$3,$4,$5,$6)`,
+                    [tpl.id, field, col, String(col), field, ++i])
+            }
+
+            res.status(201).json({ ...tpl, columns })
+        } catch (e) { fail(res, e, '양식 등록 실패') }
+    })
+
+    router.get('/ra-templates/:id', async (req, res) => {
+        try {
+            const t = await pool.query('SELECT * FROM template WHERE id = $1', [req.params.id])
+            if (t.rowCount === 0) return res.status(404).json({ error: '없는 양식입니다' })
+            const m = await pool.query(
+                'SELECT field_key, col_index FROM template_mapping WHERE template_id = $1 ORDER BY sort_order',
+                [req.params.id])
+            const columns = {}
+            m.rows.forEach(r => { if (r.field_key) columns[r.field_key] = r.col_index })
+            res.json({ ...t.rows[0], columns })
+        } catch (e) { fail(res, e, '양식 상세 조회 실패') }
+    })
+
     // ── 문서유형 ────────────────────────────────────────────
     router.get('/doc-types', async (req, res) => {
         try {
