@@ -2293,7 +2293,7 @@ app.post('/api/sms/risk-assessments', async (req, res) => {
         // 빈도x강도로 등급을 매긴다. 부록 A.4 매트릭스이며 현장 실측값과 일치한다.
         const gradeOf = (f, s) => {
             const v = (f || 0) * (s || 0)
-            return v >= 20 ? 'A' : v >= 15 ? 'B' : v >= 10 ? 'C' : v > 0 ? 'D' : null
+            return v >= 20 ? 'A' : v >= 15 ? 'B' : v >= 10 ? 'C' : v >= 5 ? 'D' : v > 0 ? 'E' : null
         }
 
         const usedHazardIds = []
@@ -2305,8 +2305,9 @@ app.post('/api/sms/risk-assessments', async (req, res) => {
                     INSERT INTO sms_risk_items (
                         assessment_id, risk_factor, risk_type, frequency, severity,
                         mitigation_measure, action_manager, action_deadline,
-                        hazard_id, hazard_class, legal_basis, current_control, grade, sort_order
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                        hazard_id, hazard_class, legal_basis, current_control, grade, sort_order,
+                        residual_frequency, residual_severity, residual_grade
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
                 `, [
                     raId,
                     item.riskFactor,
@@ -2321,7 +2322,10 @@ app.post('/api/sms/risk-assessments', async (req, res) => {
                     item.legalBasis || null,
                     item.currentControl || null,
                     gradeOf(item.frequency, item.severity),
-                    order
+                    order,
+                    item.residualFrequency || null,
+                    item.residualSeverity || null,
+                    gradeOf(item.residualFrequency, item.residualSeverity)
                 ])
                 if (item.hazardId) usedHazardIds.push(item.hazardId)
             }

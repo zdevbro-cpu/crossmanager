@@ -42,6 +42,7 @@ const GRADE_BADGE: Record<string, string> = {
   B: 'badge-warning',
   C: 'badge-primary',
   D: 'badge-tag',
+  E: 'badge',
 }
 
 const GRADE_ACTION: Record<string, string> = {
@@ -49,6 +50,7 @@ const GRADE_ACTION: Record<string, string> = {
   B: '작업 전 개선 필수 · 관리감독자 입회',
   C: '개선 계획 수립 후 작업',
   D: '현행 조치 유지 · 주기적 확인',
+  E: '허용 가능 · 관리 불필요',
 }
 
 const HAZARD_CLASSES = ['작업환경', '화학적', '기계적', '기술적']
@@ -57,7 +59,7 @@ const HAZARD_CLASSES = ['작업환경', '화학적', '기계적', '기술적']
 const gradeOf = (f: number | null, s: number | null) => {
   if (!f || !s) return null
   const v = f * s
-  return v >= 20 ? 'A' : v >= 15 ? 'B' : v >= 10 ? 'C' : 'D'
+  return v >= 20 ? 'A' : v >= 15 ? 'B' : v >= 10 ? 'C' : v >= 5 ? 'D' : 'E'
 }
 
 export default function HazardLibraryPage() {

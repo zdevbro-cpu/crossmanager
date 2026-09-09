@@ -286,7 +286,7 @@ const createMasterRouter = (pool) => {
             let grade = null
             if (f >= 1 && f <= 5 && s >= 1 && s <= 5) {
                 const v = f * s
-                grade = v >= 20 ? 'A' : v >= 15 ? 'B' : v >= 10 ? 'C' : 'D'
+                grade = v >= 20 ? 'A' : v >= 15 ? 'B' : v >= 10 ? 'C' : v >= 5 ? 'D' : 'E'
             }
 
             const { rows } = await pool.query(`

@@ -44,7 +44,7 @@ const HAZARD_CLASSES = ['작업환경', '화학적', '기계적', '기술적']
 const gradeOf = (f: number | null, s: number | null) => {
   if (!f || !s) return null
   const v = f * s
-  return v >= 20 ? 'A' : v >= 15 ? 'B' : v >= 10 ? 'C' : 'D'
+  return v >= 20 ? 'A' : v >= 15 ? 'B' : v >= 10 ? 'C' : v >= 5 ? 'D' : 'E'
 }
 
 export default function HazardReviewPage() {

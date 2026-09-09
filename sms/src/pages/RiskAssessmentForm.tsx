@@ -18,6 +18,8 @@ interface RiskItemForm {
     hazardClass?: string
     legalBasis?: string
     currentControl?: string
+    residualFrequency?: number // 개선 후 위험성 — 현장 양식의 필수 항목이다
+    residualSeverity?: number
 }
 
 // 위험요인 라이브러리에서 고른 항목을 평가서 라인으로 바꾼다.
@@ -41,6 +43,8 @@ function fromLibrary(): RiskItemForm[] | null {
             hazardClass: h.hazard_class || '',
             legalBasis: h.legal_basis || '',
             currentControl: h.current_control || '',
+            residualFrequency: h.residual_frequency || undefined,
+            residualSeverity: h.residual_severity || undefined,
         }))
     } catch (e) {
         return null
@@ -115,6 +119,8 @@ export default function RiskAssessmentFormPage() {
                 hazardClass: h.hazard_class || '',
                 legalBasis: h.legal_basis || '',
                 currentControl: h.current_control || '',
+                residualFrequency: h.residual_frequency || undefined,
+                residualSeverity: h.residual_severity || undefined,
             }))
             showToast(`${data.length}건을 불러왔습니다. 당일 작업에 맞게 고치고 지우십시오.`, 'success')
         } catch (err) {
@@ -133,6 +139,14 @@ export default function RiskAssessmentFormPage() {
             console.error(err)
             showToast('저장 중 오류가 발생했습니다.', 'error')
         }
+    }
+
+    // 위험성 등급 — 빈도x강도 점수를 내고 등급으로 치환한다.
+    // 경계는 현장 RA 파일 142행을 역산해 확정했다(6/8/9=D, 10/12=C, 15/16=B, 20=A).
+    const gradeOf = (f?: number, s?: number) => {
+        if (!f || !s) return null
+        const v = f * s
+        return v >= 20 ? 'A' : v >= 15 ? 'B' : v >= 10 ? 'C' : v >= 5 ? 'D' : 'E'
     }
 
     // Calculate risk level helper
@@ -308,6 +322,36 @@ export default function RiskAssessmentFormPage() {
                                                 rows={2}
                                                 placeholder="구체적인 안전 조치 내용"
                                             />
+                                        </div>
+
+                                        {/*
+                                            개선 후 위험성 — 현장 양식의 필수 항목이다.
+                                            감소대책을 적용한 뒤 남는 위험을 다시 평가해 적는다.
+                                        */}
+                                        <div className="form-group full">
+                                            <label>개선 후 위험성 (감소대책 적용 후)</label>
+                                            <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                                                <span className="muted" style={{ fontSize: '0.85rem' }}>가능성</span>
+                                                <select {...register(`items.${index}.residualFrequency` as const, { valueAsNumber: true })}
+                                                    className="input" style={{ width: 72 }}>
+                                                    <option value="">-</option>
+                                                    {[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n}</option>)}
+                                                </select>
+                                                <span className="muted" style={{ fontSize: '0.85rem' }}>중대성</span>
+                                                <select {...register(`items.${index}.residualSeverity` as const, { valueAsNumber: true })}
+                                                    className="input" style={{ width: 72 }}>
+                                                    <option value="">-</option>
+                                                    {[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n}</option>)}
+                                                </select>
+                                                {(() => {
+                                                    const rf = watch(`items.${index}.residualFrequency`)
+                                                    const rs = watch(`items.${index}.residualSeverity`)
+                                                    const g = gradeOf(rf, rs)
+                                                    return g
+                                                        ? <span className="badge badge-tag">{g} ({rf}×{rs}={(rf as number) * (rs as number)})</span>
+                                                        : <span className="muted" style={{ fontSize: '0.8rem' }}>미입력</span>
+                                                })()}
+                                            </div>
                                         </div>
 
                                         <div className="form-group">
