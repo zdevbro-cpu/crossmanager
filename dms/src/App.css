@@ -1,0 +1,451 @@
+/* 상단 메뉴를 좌측 사이드바로 옮겼다. 상단바에는 브랜드와 현장 선택·계정만 남는다.
+ * 뷰포트를 채우는 그리드로 잡아 사이드바와 본문이 각자 스크롤하게 한다.
+ * 상단바 높이를 CSS 상수로 적어 sticky 위치를 맞출 필요가 없다. */
+.app-shell {
+  height: 100vh;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  grid-template-columns: auto 1fr;
+  color: #e8ecf7;
+}
+
+.topbar {
+  grid-column: 1 / -1;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0 1.5rem;
+  backdrop-filter: blur(12px);
+  background: rgba(10, 16, 32, 0.8);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.brand-group {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.brand-logo {
+  width: 100px;
+  height: 100px;
+  object-fit: contain;
+  margin: -0.75rem 0;
+}
+
+.brand-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.brand-label {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #9fb2cc;
+  letter-spacing: 0.02em;
+}
+
+.brand-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #f2f5ff;
+}
+
+.main-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.nav-container {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+}
+
+.nav-link {
+  padding: 0.4rem 0.8rem;
+  border-radius: 10px;
+  font-size: 0.95rem;
+  color: #c6d5f0;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.02);
+  transition: all 0.2s ease;
+}
+
+.nav-link:hover {
+  border-color: rgba(99, 164, 255, 0.5);
+  color: #f6f8ff;
+}
+
+.nav-link.active {
+  color: #f2f5ff;
+  background: #475569;
+  border-color: rgba(71, 85, 105, 0.5);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+/* 본문 폭 상한을 두지 않는다.
+ * max-width 를 두면 남는 자리가 오른쪽에 통째로 비고, .content 가 스크롤
+ * 컨테이너라 스크롤바도 화면 오른쪽 끝이 아니라 그 폭 지점에 생긴다.
+ * SWMS 대시보드처럼 내용이 긴 화면에서 특히 눈에 띈다. */
+.content {
+  grid-row: 2;
+  grid-column: 2;
+  overflow-y: auto;
+  width: 100%;
+  margin: 0;
+  padding: 1.5rem;
+}
+
+/* 로그인 전에는 사이드바가 없어 본문이 전체 폭을 쓴다. */
+.content-full {
+  grid-column: 1 / -1;
+}
+
+.spinner-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: #c6d5f0;
+}
+
+.spinner {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.15);
+  border-top-color: #8bd3ff;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.project-switcher {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: #dce6fb;
+}
+
+.project-switcher label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.project-switcher select {
+  padding: 0.42rem 0.65rem;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: #f2f6ff;
+}
+
+.project-switcher select option {
+  background-color: #0d1428;
+  color: #f2f6ff;
+}
+
+.project-switcher select:focus {
+  outline: 2px solid rgba(139, 211, 255, 0.8);
+  border-color: rgba(139, 211, 255, 0.9);
+}
+
+.project-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.42rem 0.7rem;
+  border-radius: 12px;
+  background: rgba(139, 211, 255, 0.12);
+  border: 1px solid rgba(139, 211, 255, 0.4);
+  color: #e8f4ff;
+}
+
+.project-pill .pill-label {
+  font-size: 0.85rem;
+  color: #9fb2cc;
+  display: none;
+}
+
+.auth-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.42rem 0.7rem;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #f2f5ff;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.env-pill {
+  padding: 0.45rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.9rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: #dce6fb;
+}
+
+.env-live {
+  border-color: rgba(58, 228, 164, 0.4);
+  color: #9cf0c8;
+}
+
+.env-mock {
+  border-color: rgba(255, 186, 0, 0.4);
+  color: #ffd27f;
+}
+
+.toast-container {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  display: grid;
+  gap: 0.5rem;
+  z-index: 50;
+}
+
+.toast {
+  min-width: 220px;
+  padding: 0.75rem 1rem;
+  border-radius: 12px;
+  background: rgba(12, 18, 32, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+  color: #e8ecf7;
+}
+
+.toast-info {
+  border-color: rgba(139, 211, 255, 0.4);
+}
+
+.toast-success {
+  border-color: rgba(58, 228, 164, 0.4);
+  color: #c6f9e2;
+}
+
+.toast-error {
+  border-color: rgba(255, 111, 111, 0.5);
+  color: #ffd7d7;
+}
+
+.toast-warning {
+  border-color: rgba(255, 186, 0, 0.5);
+  color: #ffe6b0;
+}
+
+@media (max-width: 960px) {
+  .topbar {
+    position: static;
+    border-bottom-color: transparent;
+    background: rgba(10, 16, 32, 0.95);
+  }
+
+  .main-nav {
+    width: 100%;
+  }
+}
+
+/* Global Standard Input & Select Styles */
+.input-std {
+  padding: 0.55rem 0.7rem;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: #f2f6ff;
+  font-size: 0.95rem;
+  transition: all 0.2s ease;
+}
+
+.input-std:focus {
+  outline: 2px solid rgba(139, 211, 255, 0.6);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.input-std option {
+  background-color: #0d1428;
+  color: #f2f6ff;
+}
+/* ── 좌측 사이드바 ──────────────────────────────────────── */
+.sidebar {
+  grid-row: 2;
+  grid-column: 1;
+  width: 232px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  padding: 0.75rem 0.6rem 2rem;
+  background: rgba(10, 16, 32, 0.55);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  transition: width 0.18s ease;
+}
+
+.sidebar.collapsed {
+  width: 60px;
+  padding-left: 0.4rem;
+  padding-right: 0.4rem;
+}
+
+.sidebar-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  margin-bottom: 0.6rem;
+  padding: 0.4rem;
+  border-radius: 8px;
+  color: #9fb2cc;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  cursor: pointer;
+}
+
+.sidebar-toggle:hover {
+  color: #f6f8ff;
+  border-color: rgba(99, 164, 255, 0.5);
+}
+
+.sidebar-group {
+  margin-top: 0.9rem;
+}
+
+.sidebar-group:first-of-type {
+  margin-top: 0;
+}
+
+.sidebar-group-label {
+  margin: 0 0 0.35rem 0.55rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #7d90ab;
+  text-transform: uppercase;
+}
+
+.sidebar.collapsed .sidebar-group-label {
+  /* 접었을 때는 글자 대신 구분선만 남긴다. */
+  height: 1px;
+  margin: 0.7rem 0.35rem;
+  overflow: hidden;
+  text-indent: -999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.sidebar-link {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.6rem;
+  margin-bottom: 0.15rem;
+  border-radius: 9px;
+  font-size: 0.9rem;
+  color: #c6d5f0;
+  border: 1px solid transparent;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.sidebar-link svg {
+  flex-shrink: 0;
+}
+
+.sidebar-link:hover {
+  color: #f6f8ff;
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(99, 164, 255, 0.35);
+}
+
+.sidebar-link.active {
+  color: #f2f5ff;
+  background: #475569;
+  border-color: rgba(71, 85, 105, 0.5);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.sidebar.collapsed .sidebar-link {
+  justify-content: center;
+  padding: 0.55rem 0;
+}
+
+.sidebar.collapsed .sidebar-link-text {
+  display: none;
+}
+
+/* 좁은 화면에서는 아이콘만 남긴다. */
+@media (max-width: 1080px) {
+  .sidebar {
+    width: 60px;
+    padding-left: 0.4rem;
+    padding-right: 0.4rem;
+  }
+
+  .sidebar .sidebar-link-text,
+  .sidebar .sidebar-toggle {
+    display: none;
+  }
+
+  .sidebar .sidebar-link {
+    justify-content: center;
+    padding: 0.55rem 0;
+  }
+
+  .sidebar .sidebar-group-label {
+    height: 1px;
+    margin: 0.7rem 0.35rem;
+    overflow: hidden;
+    text-indent: -999px;
+    background: rgba(255, 255, 255, 0.08);
+  }
+}
+
+/* 스크롤바 — 브라우저 기본값이 밝은 회색이라 어두운 화면에서 밝게 튄다.
+ * 화면 색과 같은 계열로 낮춘다. Firefox 는 scrollbar-color, 나머지는 ::-webkit. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) rgba(10, 16, 32, 0.6);
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: rgba(10, 16, 32, 0.6);
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.32);
+}
+
+*::-webkit-scrollbar-corner {
+  background: rgba(10, 16, 32, 0.6);
+}
