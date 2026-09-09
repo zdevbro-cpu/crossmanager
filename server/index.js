@@ -221,9 +221,14 @@ pool.connect((err) => {
 // 4.5 View Document File (Inline with Clean Name) - Current Version
 // 4.5 View Document File (Inline with Clean Name) - Current Version
 // 4.5 View Document File (Inline with Clean Name) - Current Version
-app.get(['/api/docview/:id/:filename', '/api/docview/:id'], async (req, res) => {
+app.get(['/api/docview/:id/:filename', '/api/docview/:id'], async (req, res, next) => {
     try {
         const { id } = req.params
+
+        // /api/docview/html/<id> 와 /api/docview/versions/<id> 가 이 패턴에
+        // 먼저 걸려 id='html' 로 조회되면서 uuid 오류로 500 이 났다.
+        // 전용 라우트가 뒤에 등록돼 있으므로 여기서 넘긴다.
+        if (id === 'html' || id === 'versions') return next()
         console.log(`[Index.js View] Request for doc id: ${id}`)
 
         // Robust Query: Get the latest version's file info
@@ -283,6 +288,20 @@ app.get(['/api/docview/:id/:filename', '/api/docview/:id'], async (req, res) => 
 
         res.setHeader('Content-Type', mimeType)
         res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodedName}`)
+
+        // 0. 드라이브 (현재 표준)
+        //    문서 실물은 드라이브에 있고 DB 에는 링크만 둔다(설계 결정).
+        //    이 분기가 없어 아래 세 갈래가 모두 빗나가 404 가 났다.
+        if (row.drive_file_id) {
+            try {
+                const gdrive = require('./lib/drive')
+                const dl = await gdrive.downloadFromDrive(row.drive_file_id)
+                return dl.stream.pipe(res)
+            } catch (e) {
+                console.warn('[View] Drive stream failed:', e.message)
+                // 드라이브가 막히면 아래 예전 경로로 내려가 본다.
+            }
+        }
 
         // 1. Try DB Content (Base64) - Persistent Legacy
         if (fileContent) {
@@ -375,11 +394,21 @@ app.get('/api/docview/html/:id', async (req, res) => {
         const docName = row.name || 'document'
         const ext = path.extname(row.file_path || docName).toLowerCase()
 
-        if (!fileContent) {
-            return res.status(400).send('미리보기를 위한 파일 데이터가 DB에 존재하지 않습니다.')
+        // 실물은 드라이브에 있고 DB 에는 링크만 둔다. file_content 만 보면
+        // 지금 문서는 전부 '데이터가 없다'로 떨어진다.
+        let buffer = null
+        if (fileContent) {
+            buffer = Buffer.from(fileContent, 'base64')
+        } else if (row.drive_file_id) {
+            const gdrive = require('./lib/drive')
+            const dl = await gdrive.downloadFromDrive(row.drive_file_id)
+            const chunks = []
+            for await (const c of dl.stream) chunks.push(c)
+            buffer = Buffer.concat(chunks)
         }
-
-        const buffer = Buffer.from(fileContent, 'base64')
+        if (!buffer) {
+            return res.status(404).send('파일을 찾을 수 없습니다.')
+        }
         let htmlContent = ''
 
         if (ext === '.docx') {
@@ -609,9 +638,14 @@ app.get('/api/docview/html/:id', async (req, res) => {
 })
 
 // 4.5 View Document File (Inline with Clean Name) - UUID check added
-app.get(['/api/docview/:id/:filename', '/api/docview/:id'], async (req, res) => {
+app.get(['/api/docview/:id/:filename', '/api/docview/:id'], async (req, res, next) => {
     try {
-        const { id } = req.params;
+        const { id } = req.params
+
+        // /api/docview/html/<id> 와 /api/docview/versions/<id> 가 이 패턴에
+        // 먼저 걸려 id='html' 로 조회되면서 uuid 오류로 500 이 났다.
+        // 전용 라우트가 뒤에 등록돼 있으므로 여기서 넘긴다.
+        if (id === 'html' || id === 'versions') return next();
         // Basic UUID validation
         if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
             console.warn(`[View] Invalid UUID skipped: ${id}`);

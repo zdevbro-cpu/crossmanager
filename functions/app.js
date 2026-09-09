@@ -166,9 +166,14 @@ ensureContractsSchema()
 
 // --- Added File Retrieval Routes (Ported from server/index.js) ---
 // 1. View Document File (Inline with Clean Name)
-app.get(['/api/docview/:id/:filename', '/api/docview/:id'], async (req, res) => {
+app.get(['/api/docview/:id/:filename', '/api/docview/:id'], async (req, res, next) => {
     try {
         const { id } = req.params
+
+        // /api/docview/html/<id> 와 /api/docview/versions/<id> 가 이 패턴에
+        // 먼저 걸려 id='html' 로 조회되면서 uuid 오류로 500 이 났다.
+        // 전용 라우트가 뒤에 등록돼 있으므로 여기서 넘긴다.
+        if (id === 'html' || id === 'versions') return next()
         console.log(`[App.js View] Request for doc id: ${id}`)
 
         // Robust Query: Get the latest version's file info
@@ -228,6 +233,20 @@ app.get(['/api/docview/:id/:filename', '/api/docview/:id'], async (req, res) => 
 
         res.setHeader('Content-Type', mimeType)
         res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodedName}`)
+
+        // 0. 드라이브 (현재 표준)
+        //    문서 실물은 드라이브에 있고 DB 에는 링크만 둔다(설계 결정).
+        //    이 분기가 없어 아래 세 갈래가 모두 빗나가 404 가 났다.
+        if (row.drive_file_id) {
+            try {
+                const gdrive = require('./lib/drive')
+                const dl = await gdrive.downloadFromDrive(row.drive_file_id)
+                return dl.stream.pipe(res)
+            } catch (e) {
+                console.warn('[View] Drive stream failed:', e.message)
+                // 드라이브가 막히면 아래 예전 경로로 내려가 본다.
+            }
+        }
 
         // 1. Try DB Content (Base64) - Persistent Legacy
         if (fileContent) {
@@ -297,6 +316,95 @@ app.get(['/api/docview/:id/:filename', '/api/docview/:id'], async (req, res) => 
 })
 
 // 2. View Document Version File (Inline with Clean Name)
+// 4.5.1 View Document as HTML (Word/Excel)
+app.get('/api/docview/html/:id', async (req, res) => {
+    try {
+        const { id } = req.params
+        const query = `
+            SELECT v.file_path, v.file_content, v.storage_kind, v.drive_file_id, d.name
+            FROM documents d
+            JOIN document_versions v ON d.id = v.document_id
+            WHERE d.id = $1
+            ORDER BY 
+                CASE WHEN d.current_version = v.version THEN 1 ELSE 2 END,
+                v.created_at DESC
+            LIMIT 1
+        `
+        const resDb = await pool.query(query, [id])
+        if (resDb.rows.length === 0) return res.status(404).send('Document not found')
+
+        const row = resDb.rows[0]
+        const fileContent = row.file_content
+        const docName = row.name || 'document'
+        const ext = path.extname(row.file_path || docName).toLowerCase()
+
+        // 실물은 드라이브에 있고 DB 에는 링크만 둔다. file_content 만 보면
+        // 지금 문서는 전부 '데이터가 없다'로 떨어진다.
+        let buffer = null
+        if (fileContent) {
+            buffer = Buffer.from(fileContent, 'base64')
+        } else if (row.drive_file_id) {
+            const gdrive = require('./lib/drive')
+            const dl = await gdrive.downloadFromDrive(row.drive_file_id)
+            const chunks = []
+            for await (const c of dl.stream) chunks.push(c)
+            buffer = Buffer.concat(chunks)
+        }
+        if (!buffer) {
+            return res.status(404).send('파일을 찾을 수 없습니다.')
+        }
+        let htmlContent = ''
+
+        if (ext === '.docx') {
+            const result = await require('mammoth').convertToHtml({ buffer: buffer })
+            htmlContent = result.value
+        } else if (ext === '.xlsx' || ext === '.xls') {
+            const workbook = require('xlsx').read(buffer, { type: 'buffer' })
+            htmlContent = workbook.SheetNames.map(name => {
+                const sheet = workbook.Sheets[name]
+                return `<h3>${name}</h3>${require('xlsx').utils.sheet_to_html(sheet)}`
+            }).join('<hr/>')
+        } else {
+            return res.status(400).send('지원하지 않는 미리보기 형식입니다. 이미지나 PDF를 이용해 주세요.')
+        }
+
+        // Wrap in a clean document template
+        const fullHtml = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <title>${docName} 미리보기</title>
+                <style>
+                    body { font-family: "Malgun Gothic", dotum, sans-serif; line-height: 1.6; color: #333; padding: 40px; max-width: 900px; margin: 0 auto; background: #ecedf1; }
+                    .container { background: white; padding: 60px; box-shadow: 0 0 20px rgba(0,0,0,0.1); min-height: 1000px; }
+                    table { border-collapse: collapse; width: 100%; margin-bottom: 20px; font-size: 0.9rem; }
+                    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+                    th { background-color: #f8f9fa; }
+                    img { max-width: 100%; height: auto; }
+                    h3 { color: #2c3e50; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-top: 30px; }
+                    @media print {
+                        body { background: white; padding: 0; }
+                        .container { box-shadow: none; padding: 0; }
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    ${htmlContent}
+                </div>
+            </body>
+            </html>
+        `
+        res.setHeader('Content-Type', 'text/html; charset=utf-8')
+        res.send(fullHtml)
+
+    } catch (err) {
+        console.error('[HTML View] Error:', err)
+        res.status(500).send('문서 변환 중 오류가 발생했습니다.')
+    }
+})
+
 app.get(['/api/docview/versions/:versionId/:filename', '/api/docview/versions/:versionId'], async (req, res) => {
     try {
         const { versionId } = req.params
